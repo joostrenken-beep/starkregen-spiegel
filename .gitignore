@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Rohdaten und Zwischenergebnisse nicht ins Repo (werden per Skript erzeugt)
+data/raw/dgm1/*
+!data/raw/dgm1/.gitkeep
+data/raw/osm/*
+!data/raw/osm/.gitkeep
+data/processed/
+node_modules/
+web/dist/
