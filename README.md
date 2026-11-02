@@ -48,9 +48,10 @@ pip install -r requirements.txt
 
 ### 2. Daten besorgen
 
-**DGM1 (LGLN OpenGeoData.NI):** 1-m-Raster, GeoTIFF/COG, ETRS89/UTM32 (EPSG:25832),
-Kacheln 1 × 1 km. Die Kacheln werden nach der linken unteren Ecke in km benannt.
-Dateien unverändert nach `data/raw/dgm1/` legen.
+**DGM1 (LGLN OpenGeoData.NI):** 1-m-Raster, Cloud Optimized GeoTIFF, ETRS89/UTM32
+(EPSG:25832), Kacheln 1 × 1 km, Stand 2025. Automatisch mit `--fetch` (über den
+STAC-Katalog `dgm.stac.lgln.niedersachsen.de`) oder manuell, z. B.
+`dgm1_32_486_5897_1_ni_2025.tif`, unverändert nach `data/raw/dgm1/`.
 
 - Test (M1): Kachel **E 486 / N 5897**
 - Pilot: 16 Kacheln, **E 484–487 × N 5895–5898**
@@ -63,7 +64,7 @@ Dateien unverändert nach `data/raw/dgm1/` legen.
 
 ```bash
 python -m pytest preprocessing/tests -q                       # Funktionstest (≈10 s)
-python preprocessing/run_pipeline.py --test --fetch-osm        # eine Kachel
+python preprocessing/run_pipeline.py --test --fetch --fetch-osm   # eine Kachel
 python preprocessing/run_pipeline.py                           # ganzes Gebiet
 ```
 
@@ -85,8 +86,11 @@ Ergebnisse unter `data/processed/test/` bzw. `data/processed/pilot/`:
 1. **Plausibilitätsbericht** (automatisch, s. o.) – Senken werden anhand von OSM
    eingeordnet; „damm“ = Verdacht auf fehlenden Durchlass.
 2. **Vergleich mit der Hinweiskarte Starkregengefahren** (BKG/NLWKN,
-   hydrodynamisches 2D-Modell, WMS `https://sgx.geodatenzentrum.de/wms_starkregen`) –
-   unabhängige Referenz; Vergleichsskript folgt, sobald der Host freigeschaltet ist.
+   hydrodynamisches 2D-Modell, WMS `https://sgx.geodatenzentrum.de/wms_starkregen`).
+   Die Pipeline rechnet dafür einen Vergleichslauf mit denselben Annahmen wie die
+   Hinweiskarte (100 mm in 1 h, ohne Kanal und Versickerung) und gibt aus:
+   `hwk_vergleich.png` (nebeneinander + Differenzbild) und Kennzahlen in
+   `statistik.json` (Trefferquote, Fehlalarmquote, CSI je Tiefenschwelle).
 
 ## Methodik (Kurzfassung)
 

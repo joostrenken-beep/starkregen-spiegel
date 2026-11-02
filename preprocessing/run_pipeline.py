@@ -22,7 +22,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from starkregen import dgm, landcover, osm, plausi, preview  # noqa: E402
+from starkregen import dgm, fetch, hwk, landcover, osm, plausi, preview  # noqa: E402
 from starkregen.model import analyse_terrain, manning_depth, run_fill_spill  # noqa: E402
 
 
@@ -53,6 +53,7 @@ def main():
     ap.add_argument("--test", action="store_true", help="nur Testkachel rechnen")
     ap.add_argument("--fetch-osm", action="store_true")
     ap.add_argument("--ohne-osm", action="store_true")
+    ap.add_argument("--fetch", action="store_true", help="DGM1-Kacheln vom LGLN laden")
     args = ap.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     g = cfg["gebiet"]
@@ -64,6 +65,9 @@ def main():
 
     # 1) DGM ------------------------------------------------------------------
     tiles_dir = ROOT / cfg["dgm"]["ordner"]
+    if args.fetch:
+        log("Lade DGM1 (LGLN STAC) …")
+        fetch.dgm_tiles(bbox, tiles_dir, log)
     miss = dgm.missing_tiles(tiles_dir, bbox) if dgm.find_tile_files(tiles_dir) else dgm.needed_tiles(bbox)
     if miss:
         log(f"Hinweis: fehlende Kacheln (E_km, N_km): {miss}")
@@ -123,9 +127,12 @@ def main():
 
     # 4) Szenarien ------------------------------------------------------------
     plausi_id = cfg["szenarien"][len(cfg["szenarien"]) // 2]["id"]
-    for sc in cfg["szenarien"]:
+    vh = cfg.get("vergleich_hwk", {})
+    runs = list(cfg["szenarien"]) + ([vh["szenario"]] if vh.get("aktiv") else [])
+    for sc in runs:
         P, T = sc["niederschlag_mm"], sc["dauer_h"]
-        r_m, bil = landcover.runoff(P, T, sealed, roof, ring_id, bid, water, cfg)
+        r_m, bil = landcover.runoff(P, T, sealed, roof, ring_id, bid, water, cfg,
+                                    ohne_verluste=sc.get("ohne_verluste", False))
         r_m = np.where(valid, r_m, 0.0)
         res = run_fill_spill(h, r_m)
         flow_h = manning_depth(res.flow_volume, res.slope, T * 3600, nman, cell)
@@ -150,6 +157,24 @@ def main():
             bil["gebaeude_gelb"] = int(((mx[1:] >= amp["gelb_ab_m"]) & (mx[1:] < amp["rot_ab_m"])).sum())
             bil["gebaeude_rot"] = int((mx[1:] >= amp["rot_ab_m"]).sum())
         stats["szenarien"][sc["id"]] = bil
+        if vh.get("aktiv") and sc["id"] == vh["szenario"]["id"]:
+            log("Vergleich mit Hinweiskarte Starkregengefahren (WMS) …")
+            ref, unk = hwk.fetch_class_raster(show, vh["wms_layer"])
+            own = depth[rs, cs]
+            ref = ref[:own.shape[0], :own.shape[1]]
+            m = ~roof[rs, cs]
+            kz = hwk.compare(own, ref, m)
+            kz["unbekannte_farbpixel"] = unk
+            stats["vergleich_hwk"] = kz
+            write_tif(out / "hwk_referenz_klassen.tif", ref, transform * transform.translation(cs.start, rs.start), crs)
+            hwk.plot(out / "hwk_vergleich.png", preview.hillshade(dem_b[rs, cs]), own, ref,
+                     f"Methodenvergleich: {P} mm in {T} h ohne Kanal/Versickerung – "
+                     f"Treffer {kz['10cm']['trefferquote']:.0%}, Fehlalarm {kz['10cm']['fehlalarmquote']:.0%} (≥10 cm)",
+                     roof[rs, cs])
+            log(f"  ≥10 cm: Treffer {kz['10cm']['trefferquote']:.0%}, Fehlalarm {kz['10cm']['fehlalarmquote']:.0%}, "
+                f"CSI {kz['10cm']['csi']:.2f};  ≥30 cm: Treffer {kz['30cm']['trefferquote']:.0%}, "
+                f"Fehlalarm {kz['30cm']['fehlalarmquote']:.0%}")
+            continue
         if sc["id"] == plausi_id:
             log("Plausibilitätsbericht …")
             plausi.report(out, dem_b[rs, cs], sinks[rs, cs], res.flow_volume[rs, cs], depth[rs, cs],

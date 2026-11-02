@@ -12,7 +12,7 @@ gebiet:
   test_kachel: [486000, 5897000, 487000, 5898000]
 
 dgm:
-  ordner: data/raw/dgm1          # GeoTIFF/COG-Kacheln (1 m) des LGLN hier ablegen
+  ordner: data/raw/dgm1          # GeoTIFF/COG-Kacheln (1 m) des LGLN; --fetch lädt sie automatisch
   zellgroesse: 1.0
 
 gebaeude:
@@ -66,6 +66,13 @@ szenarien:                       # Blockregen
   - {id: p30, niederschlag_mm: 30, dauer_h: 1}
   - {id: p50, niederschlag_mm: 50, dauer_h: 1}
   - {id: p80, niederschlag_mm: 80, dauer_h: 1}
+
+# Vergleichslauf mit den Annahmen der Hinweiskarte Starkregengefahren (BKG/NLWKN):
+# 100 mm in 1 h, ohne Kanal und ohne Versickerung. Nur zur Methodenprüfung.
+vergleich_hwk:
+  aktiv: true
+  szenario: {id: hwk100, niederschlag_mm: 100, dauer_h: 1, ohne_verluste: true}
+  wms_layer: ni_tiefe_extrem
 
 ampel:                           # max. Wassertiefe im Ring um das Gebäude
   gelb_ab_m: 0.10

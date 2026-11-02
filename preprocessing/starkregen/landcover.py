@@ -105,19 +105,21 @@ def building_ring(bid, width=1):
     return out
 
 
-def runoff(P_mm, T_h, sealed, roof, ring_id, bid, water, cfg):
+def runoff(P_mm, T_h, sealed, roof, ring_id, bid, water, cfg, ohne_verluste=False):
     """Effektiver Oberflächenabfluss je Zelle (m) für einen Blockregen.
 
+    ohne_verluste=True: kein Kanal, keine Versickerung (wie Hinweiskarte BKG/NLWKN).
     Rückgabe: runoff_m (2D), Bilanz-Dict (m³ bei 1 m² Zellen)
     """
     a = cfg["abfluss"]
     P = P_mm / 1000.0
-    eff_sealed = max(0.0, P - a["versiegelt"]["benetzungsverlust_mm"] / 1000
-                     - a["kanal"]["abschlag_mm_h"] * T_h / 1000)
-    sewer = min(max(0.0, P - a["versiegelt"]["benetzungsverlust_mm"] / 1000),
-                a["kanal"]["abschlag_mm_h"] * T_h / 1000)
-    eff_perv = max(0.0, P - a["unversiegelt"]["anfangsverlust_mm"] / 1000
-                   - a["unversiegelt"]["infiltration_mm_h"] * T_h / 1000)
+    benetz = 0.0 if ohne_verluste else a["versiegelt"]["benetzungsverlust_mm"] / 1000
+    kanal = 0.0 if ohne_verluste else a["kanal"]["abschlag_mm_h"] * T_h / 1000
+    av = 0.0 if ohne_verluste else a["unversiegelt"]["anfangsverlust_mm"] / 1000
+    inf = 0.0 if ohne_verluste else a["unversiegelt"]["infiltration_mm_h"] * T_h / 1000
+    eff_sealed = max(0.0, P - benetz - kanal)
+    sewer = min(max(0.0, P - benetz), kanal)
+    eff_perv = max(0.0, P - av - inf)
     r = sealed * eff_sealed + (1 - sealed) * eff_perv
     r = np.where(water, P, r)          # Regen auf Wasserflächen fließt vollständig ab
     sewer_vol = float((sealed * sewer).sum() + roof.sum() * sewer)
