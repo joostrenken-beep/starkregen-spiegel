@@ -31,14 +31,7 @@ class Hierarchy:
 
     def root_of_leaf(self) -> np.ndarray:
         """Wurzelknoten je Einzelsenke (oberste Senke, die zum Rand/Unterlieger überläuft)."""
-        root = np.arange(self.n_labels)
-        p = self.parent
-        for leaf in range(1, self.n_labels):
-            x = leaf
-            while p[x] >= 0:
-                x = p[x]
-            root[leaf] = x
-        return root
+        return hydro.root_nodes(self.parent, self.n_nodes)[: self.n_labels].copy()
 
     def sink_depth_full(self) -> np.ndarray:
         """Senkentiefe, wenn alle Senken bis zum Überlauf gefüllt wären (m)."""

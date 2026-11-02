@@ -399,13 +399,13 @@ def fill_spill(label, runoff_by_label, own_cap, parent, sibling, link, n_nodes):
 
 @njit(cache=True)
 def root_nodes(parent, n_nodes):
-    """Wurzel (oberste Senke) je Knoten."""
+    """Wurzel (oberste Senke) je Knoten – linear: ein Elternknoten entsteht immer
+    nach seinen Kindern und hat daher die höhere Nummer."""
     root = np.arange(n_nodes)
-    for x in range(n_nodes):
-        r = x
-        while parent[r] >= 0:
-            r = parent[r]
-        root[x] = r
+    for x in range(n_nodes - 1, -1, -1):
+        p = parent[x]
+        if p >= 0:
+            root[x] = root[p]
     return root
 
 
