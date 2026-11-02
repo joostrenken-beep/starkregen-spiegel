@@ -17,8 +17,12 @@ Näherung der Fließtiefe auf geneigten Flächen. **Kein hydrodynamisches 2D-Mod
   ALKIS-Durchlässe (+25 m) und vermutete Durchlässe (Gewässer an Straße/Bahn
   unterbrochen und innerhalb 40 m fortgesetzt). Von jedem Tiefpunkt im Korridor
   wird der Weg mit dem geringsten Aushub zu tieferem Gelände gesucht.
-  **Annahme: Durchlässe haben unbegrenzte Leistungsfähigkeit.** Ausgaben:
-  `durchstich_m.tif`, `durchlaesse_vermutet.geojson`.
+  - Aushub ≤ 0,5 m → offener Graben (DGM wird abgesenkt).
+  - Aushub > 0,5 m (Damm) → **Durchlass mit begrenzter Leistung**: Der Damm bleibt;
+    aus dem Senkensystem fließen höchstens Q·T zum Auslauf, der Rest staut sich
+    und läuft ggf. über die Dammkrone. Standard Q = 1,0 m³/s (≈ DN 800–1000 voll),
+    bewusst vorsichtig. Bekannte Werte: `durchlaesse.einzelwerte` in der Konfiguration.
+  Ausgaben: `durchstich_m.tif`, `durchlaesse.geojson`, `durchlaesse_vermutet.geojson`.
 
 ## 2. Abflussbildung (Blockregen P in T)
 Je Zelle Versiegelungsgrad *s* (0…1) aus der ALKIS-Nutzung (Tabelle in
@@ -71,11 +75,12 @@ erster Pilotlauf (Kerngebiet 2 × 2 km):
 - Fehlalarme selten (≈ 10 % der als nass gezeigten Fläche).
 - Wir zeigen weniger flächige Überströmung (10–50 cm) entlang von Straßen und
   Gewässern → bekannte Schwäche der statischen Methode.
-- **Größte Abweichung: Bachtal Südwest** (≈ E 485 600 / N 5 896 400). Die
-  Hinweiskarte staut den Bach vor Straßen-/Bahndamm bis 4 m auf (Damm im DGM
-  geschlossen); wir öffnen den Durchlass. Allein dort ≈ 460 Gebäude
-  unterschiedlich eingestuft. Entscheidend ist die tatsächliche Leistungsfähigkeit
-  der Durchlässe.
+- Bachtal Südwest (≈ E 485 600 / N 5 896 400): Die Hinweiskarte staut den Bach
+  vor Straßen-/Bahndamm bis 4 m auf (Damm im DGM geschlossen). Mit unbegrenzten
+  Durchlässen wichen ≈ 460 Gebäude ab; mit begrenzter Leistung (1 m³/s) staut es
+  auch bei uns. Entscheidend ist die tatsächliche Leistungsfähigkeit der Durchlässe.
+- Stand mit begrenzten Durchlässen: Fläche ≥ 10 cm Treffer 45 %, Fehlalarm 7 %;
+  ≥ 30 cm Treffer 54 %; **Gebäude-Ampel gleich bei 72 %** von 5 286 Gebäuden.
 
 ## 7. Grenzen (gehören in den Hinweistext der App)
 - Statisch: keine Ganglinien, keine Fließzeiten, kein Rückstau, kein Impuls.

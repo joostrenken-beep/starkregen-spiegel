@@ -112,7 +112,7 @@ def test_carve_only_inside_corridor():
     valid, ns = masks(dem)
     corridor = np.zeros_like(valid)
     corridor[48:51, :] = True                  # Bach-Korridor über den Damm
-    out, n = breach_corridors(dem, valid, corridor)
+    out, n, _ = breach_corridors(dem, valid, corridor)
     assert n > 0
     # im Korridor durchstochen: Damm nicht mehr höher als die Oberwasser-Sohle
     assert out[48:51, 51].min() <= dem[49, 53] + 1e-9
@@ -121,3 +121,25 @@ def test_carve_only_inside_corridor():
     # danach keine Senke mehr hinter dem Damm im Korridor
     h = analyse_terrain(out, valid, ns)
     assert h.sink_depth_full()[49, 60] < 1e-6
+
+
+def test_culvert_with_limited_capacity():
+    # Tal mit Damm, Durchlass begrenzt: Teil fließt durch, Rest staut
+    dem = plane()
+    dem[:, 50:53] += 3.0
+    dem[:3, 45:] += 10.0
+    dem[-3:, 45:] += 10.0
+    dem[:, -3:] += 10.0
+    valid, ns = masks(dem)
+    h = analyse_terrain(dem, valid, ns)
+    nc = dem.shape[1]
+    inlet, outlet = 49 * nc + 53, 49 * nc + 49
+    rain = np.zeros_like(dem)
+    rain[49, 70] = 1000.0
+    r0 = run_fill_spill(h, rain)
+    r1 = run_fill_spill(h, rain, [{"einlauf": inlet, "auslauf": outlet, "q_m3s": 0.1}], 3600)
+    assert r1.durchlass_m3 == pytest.approx(360.0)
+    assert r0.stored == pytest.approx(1000.0)
+    assert r1.stored == pytest.approx(640.0)          # 360 m³ abgeleitet, Rest bleibt
+    assert r1.stored + r1.to_ocean == pytest.approx(1000.0)
+    assert r1.lake_depth[49, 60] < r0.lake_depth[49, 60]

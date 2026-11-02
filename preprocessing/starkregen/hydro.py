@@ -397,6 +397,101 @@ def fill_spill(label, runoff_by_label, own_cap, parent, sibling, link, n_nodes):
     return water, isfull, over, to_ocean
 
 
+@njit(cache=True)
+def root_nodes(parent, n_nodes):
+    """Wurzel (oberste Senke) je Knoten."""
+    root = np.arange(n_nodes)
+    for x in range(n_nodes):
+        r = x
+        while parent[r] >= 0:
+            r = parent[r]
+        root[x] = r
+    return root
+
+
+@njit(cache=True)
+def fill_spill_drains(label, runoff_by_label, own_cap, parent, sibling, link, n_nodes,
+                      root, drain_cap, drain_target):
+    """Füll-und-Überlauf mit Durchlässen begrenzter Leistung.
+
+    drain_cap[R]   : Volumen (m³), das ein Durchlass aus dem Senkensystem mit Wurzel R
+                     während des Ereignisses ableiten kann (= Q_max · Dauer); 0 = keiner
+    drain_target[R]: Zelle am Auslauf des Durchlasses
+
+    Wasser, das ein Senkensystem mit Durchlass erreicht, fließt zuerst durch den
+    Durchlass (bis drain_cap), erst danach füllt es die Senke (statische Näherung).
+    Rückgabe: water, isfull, over, to_ocean, drained (je Knoten)
+    """
+    water = np.zeros(n_nodes)
+    isfull = np.zeros(n_nodes, dtype=np.bool_)
+    over = np.zeros(n_nodes)
+    drained = np.zeros(n_nodes)
+    rem = drain_cap.copy()
+    to_ocean = 0.0
+    n_lab = runoff_by_label.shape[0]
+    st_x = np.empty(16, dtype=np.int64)
+    st_a = np.empty(16)
+    for L0 in range(1, n_lab):
+        if runoff_by_label[L0] <= 0.0:
+            continue
+        sp = 0
+        st_x[0] = L0
+        st_a[0] = runoff_by_label[L0]
+        sp = 1
+        while sp > 0:
+            sp -= 1
+            X = st_x[sp]
+            amt = st_a[sp]
+            while amt > 0.0:
+                R = root[X]
+                if rem[R] > 0.0:
+                    d = amt if amt < rem[R] else rem[R]
+                    rem[R] -= d
+                    drained[R] += d
+                    amt -= d
+                    tgt = drain_target[R]
+                    if tgt < 0 or label[tgt] == OCEAN:
+                        to_ocean += d
+                    else:
+                        if sp + 1 >= st_x.shape[0]:
+                            sx = np.empty(st_x.shape[0] * 2, dtype=np.int64)
+                            sa = np.empty(st_x.shape[0] * 2)
+                            sx[:sp] = st_x[:sp]
+                            sa[:sp] = st_a[:sp]
+                            st_x, st_a = sx, sa
+                        st_x[sp] = label[tgt]
+                        st_a[sp] = d
+                        sp += 1
+                    if amt <= 0.0:
+                        break
+                if not isfull[X]:
+                    room = own_cap[X] - water[X]
+                    if amt <= room:
+                        water[X] += amt
+                        amt = 0.0
+                        break
+                    if room > 0.0:
+                        amt -= room
+                    water[X] = own_cap[X]
+                    isfull[X] = True
+                if parent[X] == -1:
+                    over[X] += amt
+                    tgt = link[X]
+                    if tgt < 0 or label[tgt] == OCEAN:
+                        to_ocean += amt
+                        amt = 0.0
+                        break
+                    X = label[tgt]
+                    continue
+                S = sibling[X]
+                if isfull[S]:
+                    X = parent[X]
+                else:
+                    over[X] += amt
+                    X = label[link[X]]
+    return water, isfull, over, to_ocean, drained
+
+
 # ---------------------------------------------------------------------------
 # 4. Wasserspiegel je Senke und Wassertiefe je Zelle
 # ---------------------------------------------------------------------------
@@ -636,11 +731,16 @@ def fill_depressions(dem, valid):
 
 
 @njit(cache=True)
-def breach_from(z, valid, corridor, dep_label, start, max_len, cost, steps, prev, touched):
+def breach_from(z, valid, corridor, dep_label, start, max_len, cost, steps, prev, touched,
+                max_cut=-1.0):
     """Dijkstra im Korridor ab Senkentiefpunkt `start`: sucht den Weg mit dem
     geringsten Aushub (Summe der Höhen über dem Startpunkt) zu einer Zelle, die
     tiefer liegt und nicht zur selben Senke gehört (oder am Gebietsrand liegt).
-    Senkt den Weg linear zwischen Start- und Zielhöhe ab. Rückgabe: Anzahl Zellen."""
+    Senkt den Weg linear zwischen Start- und Zielhöhe ab.
+
+    max_cut >= 0: Wege mit tieferem Aushub werden NICHT ausgehoben (Damm bleibt),
+    sondern nur gemeldet -> Durchlass mit begrenzter Leistung.
+    Rückgabe: (abgesenkte Zellen, Zielzelle, max. Aushub, Zelle des max. Aushubs)"""
     nr, nc = z.shape
     zf = z.ravel()
     vflat = valid.ravel()
@@ -722,16 +822,26 @@ def breach_from(z, valid, corridor, dep_label, start, max_len, cost, steps, prev
         if found:
             break
     m = 0
+    maxcut = 0.0
+    crest = -1
     if target >= 0:
         zt = zf[target]
         L = steps[target]
         p = prev[target]
         while p >= 0 and p != start:
             zi = zs + (zt - zs) * (steps[p] / max(L, 1))
-            if zf[p] > zi:
-                zf[p] = zi
-                m += 1
+            if zf[p] - zi > maxcut:
+                maxcut = zf[p] - zi
+                crest = p
             p = prev[p]
+        if max_cut < 0.0 or maxcut <= max_cut:
+            p = prev[target]
+            while p >= 0 and p != start:
+                zi = zs + (zt - zs) * (steps[p] / max(L, 1))
+                if zf[p] > zi:
+                    zf[p] = zi
+                    m += 1
+                p = prev[p]
     for t in range(nt):
         cost[touched[t]] = np.inf
-    return m
+    return m, target, maxcut, crest

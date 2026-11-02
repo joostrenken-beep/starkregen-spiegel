@@ -75,16 +75,31 @@ class ScenarioResult:
     n_full_roots: int
 
 
-def run_fill_spill(h: Hierarchy, runoff_m: np.ndarray) -> ScenarioResult:
-    """runoff_m: effektiver Abfluss je Zelle in m Wassersäule (nach Verlusten/Kanal)."""
+def run_fill_spill(h: Hierarchy, runoff_m: np.ndarray, culverts=None, duration_s=3600.0) -> ScenarioResult:
+    """runoff_m: effektiver Abfluss je Zelle in m Wassersäule (nach Verlusten/Kanal).
+
+    culverts: Liste von dicts mit 'einlauf', 'auslauf' (Zellindex) und 'q_m3s'
+              -> Durchlässe mit begrenzter Leistung (Volumen = q · Dauer).
+    """
     vol = (runoff_m * h.cell_area).ravel()
     vol[~h.valid.ravel()] = 0
     lab = h.label
     runoff_by_label = np.bincount(lab[lab >= 0], weights=vol[lab >= 0], minlength=h.n_labels)
     # Abfluss in Ozean-Gebieten (label 0) fließt direkt hinaus
     direct_out = runoff_by_label[0]
-    water, isfull, over, to_ocean = hydro.fill_spill(lab, runoff_by_label, h.own_cap, h.parent,
-                                                    h.sibling, h.link, h.n_nodes)
+    root = hydro.root_nodes(h.parent, h.n_nodes)
+    drain_cap = np.zeros(h.n_nodes)
+    drain_tgt = np.full(h.n_nodes, -1, dtype=np.int64)
+    for c in culverts or []:
+        leaf = lab[c["einlauf"]]
+        if leaf <= 0:
+            continue
+        R = root[leaf]
+        drain_cap[R] += c["q_m3s"] * duration_s
+        drain_tgt[R] = c["auslauf"]
+    water, isfull, over, to_ocean, drained = hydro.fill_spill_drains(
+        lab, runoff_by_label, h.own_cap, h.parent, h.sibling, h.link, h.n_nodes,
+        root, drain_cap, drain_tgt)
     depth, _ = hydro.lake_levels(h.dem.ravel(), h.key, lab, water, isfull, h.cap, h.own_cap,
                                  h.zspill, h.parent, h.child_a, h.child_b, h.n_nodes,
                                  h.n_labels, h.cell_area)
@@ -95,13 +110,17 @@ def run_fill_spill(h: Hierarchy, runoff_m: np.ndarray) -> ScenarioResult:
     links = h.link[: h.n_nodes]
     m = (over > 0) & (links >= 0)
     np.add.at(source, links[m], over[m])
+    md = (drained > 0) & (drain_tgt >= 0)
+    np.add.at(source, drain_tgt[md], drained[md])
     absorb = depth > 0.005
     acc, slope = hydro.mfd_accumulate(h.dem, h.valid, source.reshape(h.shape), absorb)
 
     stored = float(water.sum())
     roots = h.parent < 0
-    return ScenarioResult(depth, acc, slope, float(vol.sum()), stored,
-                          float(to_ocean + direct_out), int((isfull & roots).sum()))
+    res = ScenarioResult(depth, acc, slope, float(vol.sum()), stored,
+                         float(to_ocean + direct_out), int((isfull & roots).sum()))
+    res.durchlass_m3 = float(drained.sum())
+    return res
 
 
 def manning_depth(volume_m3: np.ndarray, slope: np.ndarray, duration_s: float,
@@ -118,24 +137,29 @@ def manning_depth(volume_m3: np.ndarray, slope: np.ndarray, duration_s: float,
     return np.power(n_manning * q / np.sqrt(s), 0.6)
 
 
-def breach_corridors(dem, valid, corridor, max_len=1000, min_depth=0.05, iterations=6):
-    """Durchsticht Dämme nur innerhalb des Korridors (least-cost breaching).
+def breach_corridors(dem, valid, corridor, max_len=1000, min_depth=0.05, iterations=6,
+                     max_cut=-1.0, dedupe_m=20.0):
+    """Durchsticht Dämme nur innerhalb des Korridors (least-cost breaching, Lindsay 2016).
 
-    Für jede Senke (Tiefe bei Vollfüllung > min_depth), die den Korridor berührt,
-    wird ab ihrem tiefsten Korridorpunkt der Weg mit dem geringsten Aushub zu
-    tieferem Gelände gesucht (max. max_len Zellen) und linear abgesenkt.
-    Wiederholt, weil sich nach einem Durchstich Senken neu ordnen.
+    Von jedem lokalen Tiefpunkt im Korridor innerhalb einer Senke wird der Weg mit
+    dem geringsten Aushub zu tieferem Gelände gesucht (max. max_len Zellen).
+      - Aushub <= max_cut (oder max_cut < 0): Weg wird linear abgesenkt (offener Graben).
+      - Aushub >  max_cut: Damm bleibt, der Weg wird als Durchlass gemeldet
+        (Einlauf = Tiefpunkt, Auslauf = Zielzelle, Dammkrone = Stelle des max. Aushubs).
+    Rückgabe: neues DGM, Anzahl abgesenkter Zellen, Liste der Durchlässe (dicts).
     """
     from scipy import ndimage
     z = np.ascontiguousarray(np.where(valid, dem, 0.0), dtype=np.float64)
     valid = np.ascontiguousarray(valid)
     corridor = np.ascontiguousarray(corridor & valid)
     n = z.size
+    ncols = z.shape[1]
     cost = np.full(n, np.inf)
     steps = np.zeros(n, dtype=np.int64)
     prev = np.full(n, -1, dtype=np.int64)
     touched = np.empty(n, dtype=np.int64)
     total = 0
+    culverts = {}
     for _ in range(iterations):
         filled = hydro.fill_depressions(z, valid)
         dep = (filled - z) > min_depth
@@ -156,9 +180,18 @@ def breach_corridors(dem, valid, corridor, max_len=1000, min_depth=0.05, iterati
         starts = starts[np.argsort(z.ravel()[starts])[::-1]]   # von oben nach unten
         changed = 0
         for st in starts:
-            changed += hydro.breach_from(z, valid, corridor, lab, int(st),
-                                         max_len, cost, steps, prev, touched)
+            m, tgt, cut, crest = hydro.breach_from(z, valid, corridor, lab, int(st), max_len,
+                                                   cost, steps, prev, touched, max_cut)
+            changed += m
+            if m == 0 and tgt >= 0 and max_cut >= 0 and cut > max_cut and crest >= 0:
+                # gleiche Dammquerung nur einmal erfassen (Raster dedupe_m)
+                cr, cc = divmod(crest, ncols)
+                key = (int(cr // dedupe_m), int(cc // dedupe_m))
+                old = culverts.get(key)
+                if old is None or cut < old["aushub_m"]:
+                    culverts[key] = {"einlauf": int(st), "auslauf": int(tgt), "krone": int(crest),
+                                     "aushub_m": float(cut)}
         total += changed
         if changed == 0:
             break
-    return z, total
+    return z, total, list(culverts.values())

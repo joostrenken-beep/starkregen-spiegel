@@ -19,6 +19,7 @@ import numpy as np
 import geopandas as gpd
 import pandas as pd
 import rasterio
+import pyproj
 import yaml
 from scipy import ndimage
 
@@ -88,6 +89,7 @@ def main():
     buildings = None
     layers = None
     n_culv = 0
+    culverts = []
     quelle = cfg["gebaeude"].get("quelle", "alkis")
     alkis_dir = ROOT / "data/raw/alkis"
     if not args.ohne_osm and quelle == "alkis":
@@ -109,12 +111,32 @@ def main():
             if len(inf):
                 inf.to_crs("EPSG:4326").to_file(out / "durchlaesse_vermutet.geojson", driver="GeoJSON")
             corr = alkis.corridor_mask(layers, inf, transform, shape)
-            dem_c, n_cells = breach_corridors(dem, valid, corr)
+            dcfg = cfg.get("durchlaesse", {})
+            dem_c, n_cells, culverts = breach_corridors(
+                dem, valid, corr, max_cut=float(dcfg.get("aushub_schwelle_m", 0.5)))
             diff = dem - dem_c
             write_tif(out / "durchstich_m.tif", np.where(diff > 0, diff, 0), transform, crs)
-            log(f"Durchstechen in Gewässer-/Durchlasskorridoren: {n_cells} Zellen abgesenkt, "
-                f"max. {np.nanmax(diff):.2f} m; vermutete Durchlässe: {len(inf)} "
-                f"(→ durchlaesse_vermutet.geojson, durchstich_m.tif)")
+            # Leistungsfähigkeit je Durchlass: Standard oder Einzelwert nach Lage
+            to_wgs = pyproj.Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+            feats = []
+            for k, c in enumerate(culverts, 1):
+                r_, c_ = divmod(c["krone"], shape[1])
+                x, y = transform * (c_ + 0.5, r_ + 0.5)
+                q = float(dcfg.get("q_standard_m3s", 1.0))
+                for ov in dcfg.get("einzelwerte", []) or []:
+                    if (ov["x"] - x) ** 2 + (ov["y"] - y) ** 2 <= ov.get("radius_m", 30) ** 2:
+                        q = float(ov["q_m3s"])
+                c.update({"id": k, "x": x, "y": y, "q_m3s": q})
+                lon, lat = to_wgs.transform(x, y)
+                feats.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                              "properties": {"id": k, "x_utm": round(x, 1), "y_utm": round(y, 1),
+                                             "dammhoehe_ueber_sohle_m": round(c["aushub_m"], 2),
+                                             "q_m3s": q}})
+            (out / "durchlaesse.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}))
+            log(f"Gewässerkorridore: {n_cells} Zellen als offener Graben abgesenkt (≤ "
+                f"{dcfg.get('aushub_schwelle_m', 0.5)} m); {len(culverts)} Dammquerungen als Durchlass "
+                f"mit begrenzter Leistung (Standard {dcfg.get('q_standard_m3s', 1.0)} m³/s) "
+                f"→ durchlaesse.geojson")
             dem = np.where(valid, dem_c, dem)
         log(f"Durchlässe geöffnet: {n_culv}; mittlerer Versiegelungsgrad (ohne Dächer) {sealed.mean():.0%}, "
             f"Dachanteil {(bid > 0).mean():.0%}")
@@ -182,7 +204,7 @@ def main():
         r_m, bil = landcover.runoff(P, T, sealed, roof, ring_id, bid, water, cfg,
                                     ohne_verluste=sc.get("ohne_verluste", False))
         r_m = np.where(valid, r_m, 0.0)
-        res = run_fill_spill(h, r_m)
+        res = run_fill_spill(h, r_m, culverts, T * 3600)
         flow_h = manning_depth(res.flow_volume, res.slope, T * 3600, nman, cell)
         flow_h[res.lake_depth > 0.005] = 0
         depth = np.maximum(res.lake_depth, flow_h)
@@ -190,6 +212,7 @@ def main():
         write_tif(out / f"{sc['id']}_wassertiefe.tif", depth, transform, crs)
         write_tif(out / f"{sc['id']}_fliessvolumen.tif", res.flow_volume, transform, crs)
         bil.update({"in_senken_m3": res.stored, "aus_gebiet_m3": res.to_ocean,
+                    "durch_durchlaesse_m3": res.durchlass_m3,
                     "bilanzfehler_m3": res.runoff_total - res.stored - res.to_ocean,
                     "flaeche_tiefer_10cm_m2_anzeige": float((depth[rs, cs] > 0.10).sum() * cell * cell),
                     "flaeche_tiefer_30cm_m2_anzeige": float((depth[rs, cs] > 0.30).sum() * cell * cell)})

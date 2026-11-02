@@ -25,6 +25,19 @@ gebaeude:
   # Gewässer, die an Straße/Bahn unterbrochen sind, als verrohrt annehmen und öffnen
   durchlaesse_ableiten: true
 
+# --- Durchlässe ----------------------------------------------------------
+# Wo ein Gewässer einen Damm (Straße/Bahn) quert, wird geprüft, wie tief man das DGM
+# durchstechen müsste. Bis zur Schwelle: offener Graben (Durchstich).
+# Darüber: Damm bleibt, Durchlass mit begrenzter Leistung (Q · Regendauer).
+durchlaesse:
+  aushub_schwelle_m: 0.5
+  # Standard 1,0 m³/s ≈ DN 800–1000 bei Vollfüllung. Bewusst vorsichtig gewählt:
+  # zu kleine Werte zeigen eher zu viel Wasser (sichere Seite).
+  q_standard_m3s: 1.0
+  # Bekannte Durchlässe: Lage (UTM, Dammkrone laut durchlaesse.geojson) + Leistung
+  einzelwerte: []
+  #  - {x: 485628, y: 5896426, radius_m: 30, q_m3s: 3.5}
+
 # --- Abflussbildung -------------------------------------------------------
 # Je Zelle: Versiegelungsgrad s (0..1). Abfluss =
 #   s     · max(0, P − Benetzung_versiegelt − Kanalabschlag)
