@@ -301,7 +301,11 @@ def run(cfg, bbox, show, out, args):
                 near=result["near_bld"], min_v_far=float(wc.get("fliessweg_aussen_min_m3", 300)))
         if vh.get("aktiv") and sc["id"] == vh["szenario"]["id"]:
             log("Vergleich mit Hinweiskarte Starkregengefahren (WMS) …")
-            ref, unk = hwk.fetch_class_raster(show, vh["wms_layer"])
+            try:
+                ref, unk = hwk.fetch_class_raster(show, vh["wms_layer"])
+            except Exception as ex:  # Vergleich ist optional – Berechnung nicht abbrechen
+                log(f"  Hinweiskarte nicht abrufbar ({ex}) – Vergleich für dieses Gebiet entfällt")
+                continue
             own = depth[rs, cs]
             ref = ref[:own.shape[0], :own.shape[1]]
             m = ~roof[rs, cs]
