@@ -1,0 +1,164 @@
+{
+ "stand": "2026-11-02",
+ "gebiet": {
+  "bounds": [
+   8.77538,
+   53.213099,
+   8.805248,
+   53.23113
+  ],
+  "zentrum": [
+   8.790314,
+   53.222114
+  ]
+ },
+ "szenarien": [
+  {
+   "id": "p30",
+   "mm": 30,
+   "dauer_h": 1,
+   "label": "30 mm in 1 h"
+  },
+  {
+   "id": "p50",
+   "mm": 50,
+   "dauer_h": 1,
+   "label": "50 mm in 1 h"
+  },
+  {
+   "id": "p80",
+   "mm": 80,
+   "dauer_h": 1,
+   "label": "80 mm in 1 h"
+  }
+ ],
+ "dateien": {
+  "tiefe": {
+   "p30": {
+    "url": "data/tiefe_p30.png",
+    "coords": [
+     [
+      8.775286,
+      53.23113
+     ],
+     [
+      8.805326,
+      53.23113
+     ],
+     [
+      8.805326,
+      53.213101
+     ],
+     [
+      8.775286,
+      53.213101
+     ]
+    ]
+   },
+   "p50": {
+    "url": "data/tiefe_p50.png",
+    "coords": [
+     [
+      8.775286,
+      53.23113
+     ],
+     [
+      8.805326,
+      53.23113
+     ],
+     [
+      8.805326,
+      53.213101
+     ],
+     [
+      8.775286,
+      53.213101
+     ]
+    ]
+   },
+   "p80": {
+    "url": "data/tiefe_p80.png",
+    "coords": [
+     [
+      8.775286,
+      53.23113
+     ],
+     [
+      8.805326,
+      53.23113
+     ],
+     [
+      8.805326,
+      53.213101
+     ],
+     [
+      8.775286,
+      53.213101
+     ]
+    ]
+   }
+  },
+  "fliesswege": {
+   "p30": "data/fliesswege_p30.json",
+   "p50": "data/fliesswege_p50.json",
+   "p80": "data/fliesswege_p80.json"
+  },
+  "senken": "data/senken.json",
+  "gebaeude": "data/gebaeude.json",
+  "adressen": "data/adressen.json"
+ },
+ "tiefenklassen": [
+  {
+   "ab_m": 0.05,
+   "farbe": "rgba(207,232,255,0.59)"
+  },
+  {
+   "ab_m": 0.1,
+   "farbe": "rgba(140,196,255,0.75)"
+  },
+  {
+   "ab_m": 0.3,
+   "farbe": "rgba(74,144,226,0.84)"
+  },
+  {
+   "ab_m": 0.5,
+   "farbe": "rgba(31,95,191,0.90)"
+  },
+  {
+   "ab_m": 1.0,
+   "farbe": "rgba(11,47,122,0.94)"
+  }
+ ],
+ "ampel": {
+  "gelb_ab_m": 0.1,
+  "rot_ab_m": 0.3,
+  "min_flaeche_m2": 5
+ },
+ "kanal_mm_h": 20.0,
+ "quellen": [
+  "DGM1 © LGLN (dl-de/by-2-0)",
+  "ALKIS © LGLN (dl-de/by-2-0)"
+ ],
+ "vergleich_hwk": {
+  "anzahl": 5286,
+  "gleich": 0.7243662504729474,
+  "max_eine_stufe_abweichung": 0.9432463110102156,
+  "matrix_zeilen_hwk_spalten_eigen_gruen_gelb_rot": [
+   [
+    2866,
+    131,
+    143
+   ],
+   [
+    794,
+    178,
+    90
+   ],
+   [
+    157,
+    142,
+    785
+   ]
+  ]
+ }
+}

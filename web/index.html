@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Starkregen-Spiegel</title>
+  <meta name="description" content="Wie fließt Wasser bei Starkregen um Ihr Haus? Orientierungshilfe für Osterholz-Scharmbeck." />
+  <meta name="theme-color" content="#0b2f7a" />
+  <link rel="icon" type="image/png" href="./favicon.png" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Starkregen" />
+</head>
+<body>
+  <div id="map" aria-label="Karte"></div>
+
+  <header class="topbar">
+    <form id="search" class="search" role="search" autocomplete="off">
+      <input id="q" type="search" placeholder="Adresse suchen, z. B. Bahnhofstraße 12" aria-label="Adresse suchen" enterkeyhint="search" />
+      <button type="button" id="locate" class="icon-btn" title="Mein Standort" aria-label="Mein Standort">◎</button>
+    </form>
+    <ul id="suggest" class="suggest" role="listbox" hidden></ul>
+  </header>
+
+  <button id="layers-btn" class="fab" aria-expanded="false" aria-controls="layers">Ebenen</button>
+  <section id="layers" class="panel" hidden>
+    <h2>Ebenen</h2>
+    <label><input type="checkbox" data-layer="tiefe" checked /> Wassertiefe</label>
+    <label><input type="checkbox" data-layer="fliesswege" checked /> Fließwege (animiert)</label>
+    <label><input type="checkbox" data-layer="senken" /> Senken (Mulden)</label>
+    <label><input type="checkbox" data-layer="gebaeude" checked /> Gebäude-Ampel</label>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <footer class="bottombar">
+    <div class="scenario">
+      <label for="rain">Regen in 1 Stunde: <strong id="rain-label">50 mm</strong></label>
+      <input id="rain" type="range" min="0" max="2" step="1" value="1" list="rain-ticks" />
+      <div class="ticks" id="rain-ticks-labels"></div>
+    </div>
+    <button id="disclaimer-link" class="link">Hinweis: keine amtliche Karte</button>
+  </footer>
+
+  <section id="sheet" class="sheet" hidden aria-live="polite">
+    <button class="sheet-close" aria-label="Schließen">×</button>
+    <div id="sheet-body"></div>
+  </section>
+
+  <dialog id="disclaimer">
+    <h2>Bitte zuerst lesen</h2>
+    <p><strong>Orientierungshilfe – keine amtliche Starkregengefahrenkarte, keine Haftung.</strong></p>
+    <p>Die Karte zeigt eine vereinfachte Berechnung (Geländeanalyse mit Füll-und-Überlauf-Verfahren),
+      kein hydrodynamisches Modell. Kanalnetz und Versickerung sind nur pauschal berücksichtigt,
+      Bordsteine, Mauern und Lichtschächte im Geländemodell nur teilweise. Tatsächliche Wasserstände
+      können deutlich abweichen.</p>
+    <p>Amtliche Informationen: <a href="https://www.nlwkn.niedersachsen.de" target="_blank" rel="noopener">NLWKN – Hinweiskarten Starkregengefahren</a>
+      und Ihre Stadt- bzw. Gemeindeverwaltung.</p>
+    <p class="small">Daten: DGM1 und ALKIS © LGLN (dl-de/by-2-0), Hintergrundkarte basemap.de © BKG (dl-de/by-2-0).
+      Stand der Berechnung: <span id="stand"></span>.</p>
+    <form method="dialog"><button class="primary" autofocus>Verstanden</button></form>
+  </dialog>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

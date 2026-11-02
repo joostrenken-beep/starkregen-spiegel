@@ -845,3 +845,42 @@ def breach_from(z, valid, corridor, dep_label, start, max_len, cost, steps, prev
     for t in range(nt):
         cost[touched[t]] = np.inf
     return m, target, maxcut, crest
+
+
+@njit(cache=True)
+def d8_accumulate(dem, valid, source, absorb):
+    """D8 (steilster Abstieg): Fließrichtung je Zelle und durchgeflossenes Volumen.
+    Zellen ohne tieferen Nachbarn oder mit absorb=True (Wasserfläche) geben nichts weiter.
+    Rückgabe: acc (m³), down (Index der Unterliegerzelle, -1 = keine)."""
+    nr, nc = dem.shape
+    n = nr * nc
+    z = dem.ravel()
+    v = valid.ravel()
+    ab = absorb.ravel()
+    acc = source.ravel().copy()
+    down = np.full(n, -1, dtype=np.int64)
+    order = np.argsort(-z)
+    for t in range(n):
+        i = order[t]
+        if not v[i]:
+            continue
+        r = i // nc
+        c = i % nc
+        best = 0.0
+        bj = -1
+        for k in range(8):
+            rr = r + DR[k]
+            cc = c + DC[k]
+            if rr < 0 or cc < 0 or rr >= nr or cc >= nc:
+                continue
+            j = rr * nc + cc
+            if not v[j]:
+                continue
+            s = (z[i] - z[j]) / DIST[k]
+            if s > best:
+                best = s
+                bj = j
+        down[i] = bj
+        if bj >= 0 and not ab[i]:
+            acc[bj] += acc[i]
+    return acc.reshape(nr, nc), down

@@ -127,3 +127,6 @@ ampel:                           # max. Wassertiefe im Ring um das Gebäude
 ausgabe:
   ordner: data/processed
   web_ordner: web/public/data
+
+web:
+  fliessweg_min_m3: 30         # Fließwege erst ab diesem durchgeflossenen Volumen zeigen

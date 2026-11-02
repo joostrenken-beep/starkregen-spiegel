@@ -120,6 +120,8 @@ def run_fill_spill(h: Hierarchy, runoff_m: np.ndarray, culverts=None, duration_s
     res = ScenarioResult(depth, acc, slope, float(vol.sum()), stored,
                          float(to_ocean + direct_out), int((isfull & roots).sum()))
     res.durchlass_m3 = float(drained.sum())
+    res.source = source
+    res.absorb = absorb
     return res
 
 

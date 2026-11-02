@@ -26,7 +26,7 @@ from scipy import ndimage
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from starkregen import alkis, dgm, hydro, fetch, hwk, landcover, osm, plausi, preview  # noqa: E402
+from starkregen import alkis, dgm, hydro, fetch, hwk, landcover, osm, plausi, preview, web_export  # noqa: E402
 from starkregen.model import analyse_terrain, breach_corridors, manning_depth, run_fill_spill  # noqa: E402
 
 
@@ -58,6 +58,7 @@ def main():
     ap.add_argument("--fetch-osm", action="store_true")
     ap.add_argument("--ohne-osm", action="store_true")
     ap.add_argument("--fetch", action="store_true", help="DGM1-Kacheln vom LGLN laden")
+    ap.add_argument("--ohne-web", action="store_true", help="keinen Web-Export erzeugen")
     args = ap.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     g = cfg["gebiet"]
@@ -199,6 +200,13 @@ def main():
     plausi_id = cfg["szenarien"][len(cfg["szenarien"]) // 2]["id"]
     vh = cfg.get("vergleich_hwk", {})
     runs = list(cfg["szenarien"]) + ([vh["szenario"]] if vh.get("aktiv") else [])
+    web = ROOT / cfg["ausgabe"]["web_ordner"]
+    do_web = not args.ohne_web and not args.test
+    if do_web:
+        web.mkdir(parents=True, exist_ok=True)
+    web_files = {"tiefe": {}, "fliesswege": {}}
+    web_depths = {}
+    tcore = transform * transform.translation(cs.start, rs.start)
     for sc in runs:
         P, T = sc["niederschlag_mm"], sc["dauer_h"]
         r_m, bil = landcover.runoff(P, T, sealed, roof, ring_id, bid, water, cfg,
@@ -239,6 +247,17 @@ def main():
             bil["gebaeude_rot"] = int((ampel[1:] == 2).sum())
             bil["gebaeude_hinweis_kleine_mulde"] = int(mulde[1:].sum())
         stats["szenarien"][sc["id"]] = bil
+        if do_web and not sc.get("ohne_verluste"):
+            sid = sc["id"]
+            web_files["tiefe"][sid] = {"url": f"data/tiefe_{sid}.png",
+                                       "coords": web_export.depth_png(depth[rs, cs], tcore, crs,
+                                                                      web / f"tiefe_{sid}.png")}
+            fl = web_export.flow_lines(dem_b, valid, res.source, res.absorb, transform, crs, rs, cs,
+                                       min_v=float(cfg.get("web", {}).get("fliessweg_min_m3", 30)))
+            (web / f"fliesswege_{sid}.json").write_text(json.dumps(fl, separators=(",", ":")))
+            web_files["fliesswege"][sid] = f"data/fliesswege_{sid}.json"
+            web_depths[sid] = depth[rs, cs]
+            log(f"  Web: Tiefe-Bild + {len(fl['features'])} Fließweg-Linien")
         if vh.get("aktiv") and sc["id"] == vh["szenario"]["id"]:
             log("Vergleich mit Hinweiskarte Starkregengefahren (WMS) …")
             ref, unk = hwk.fetch_class_raster(show, vh["wms_layer"])
@@ -305,6 +324,29 @@ def main():
         cols = cols + [c for c in buildings.columns if c.split("_", 1)[0] in {x["id"] for x in runs}]
         buildings[cols].to_file(out / "gebaeude_ergebnis.gpkg", driver="GPKG")
     (out / "statistik.json").write_text(json.dumps(stats, indent=2, ensure_ascii=False))
+
+    # 5) Web-Export ------------------------------------------------------------
+    if do_web:
+        sids = [x["id"] for x in cfg["szenarien"]]
+        sk = web_export.sinks_geojson(sinks[rs, cs], web_depths, tcore, crs)
+        (web / "senken.json").write_text(json.dumps(sk, separators=(",", ":")))
+        files = dict(web_files, senken="data/senken.json")
+        if buildings is not None and len(buildings):
+            gb = web_export.buildings_geojson(buildings, sids, show)
+            (web / "gebaeude.json").write_text(json.dumps(gb, separators=(",", ":"), ensure_ascii=False))
+            files["gebaeude"] = "data/gebaeude.json"
+            if layers is not None and "addresses" in layers:
+                ad = web_export.addresses_json(layers["addresses"], show, crs)
+                (web / "adressen.json").write_text(json.dumps(ad, separators=(",", ":"), ensure_ascii=False))
+                files["adressen"] = "data/adressen.json"
+        scen = [{"id": x["id"], "mm": x["niederschlag_mm"], "dauer_h": x["dauer_h"],
+                 "label": f"{x['niederschlag_mm']} mm in {x['dauer_h']} h"} for x in cfg["szenarien"]]
+        web_export.write_meta(web / "meta.json", show, crs, scen, files, {
+            "ampel": cfg["ampel"], "kanal_mm_h": cfg["abfluss"]["kanal"]["abschlag_mm_h"],
+            "quellen": ["DGM1 © LGLN (dl-de/by-2-0)", "ALKIS © LGLN (dl-de/by-2-0)"],
+            "vergleich_hwk": stats.get("vergleich_hwk", {}).get("gebaeude_ampel")})
+        sizes = sum(f.stat().st_size for f in web.glob("*")) / 1e6
+        log(f"Web-Export: {web} ({sizes:.1f} MB)")
     log(f"Fertig. Ergebnisse in {out}")
 
 

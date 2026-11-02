@@ -14,7 +14,7 @@ Pilotgebiet: Osterholz-Scharmbeck, Innenstadt (2 × 2 km, gerechnet mit 1 km Puf
 |---|---|---|
 | M0 | Gerüst, Konfiguration, Python-Umgebung | ✅ |
 | M1 | Vorverarbeitung (Senken, Füll-und-Überlauf, Fließwege, Kontrollbilder) | ✅ Pilotgebiet gerechnet (ALKIS + DGM1 2025), Vergleich mit Hinweiskarte |
-| M2 | Karte mit Adresssuche und Layern | offen |
+| M2 | Karte mit Adresssuche und Layern (PWA) | ✅ |
 | M3 | Steckbrief, Szenarien, 3D | offen |
 
 ## Ordnerstruktur
@@ -33,7 +33,7 @@ preprocessing/
   starkregen/dgm.py      Kacheln zusammensetzen
   tests/                 Funktionstests mit künstlichem Gelände
 docs/                    Methodik, Overpass-Abfrage
-web/                     Frontend (ab M2)
+web/                     Web-App (Vite + MapLibre, PWA); Daten in web/public/data
 ```
 
 ## Schritt für Schritt: Vorverarbeitung
@@ -91,6 +91,38 @@ Ergebnisse unter `data/processed/test/` bzw. `data/processed/pilot/`:
    Hinweiskarte (100 mm in 1 h, ohne Kanal und Versickerung) und gibt aus:
    `hwk_vergleich.png` (nebeneinander + Differenzbild) und Kennzahlen in
    `statistik.json` (Trefferquote, Fehlalarmquote, CSI je Tiefenschwelle).
+
+## Web-App (Meilenstein 2)
+
+Die Pipeline schreibt am Ende alle Daten für die App nach `web/public/data/`
+(Wassertiefe als Bild je Szenario, Fließwege, Senken, Gebäude mit Ampel,
+Adressindex). Danach:
+
+```bash
+cd web
+npm install          # einmalig
+npm run dev          # Entwicklungsserver: http://localhost:5173
+npm run build        # fertige statische Seite in web/dist/
+```
+
+**Veröffentlichen (GitHub Pages):** einmalig im Repo *Settings → Pages → Source:
+GitHub Actions* einstellen. Danach baut und veröffentlicht der Workflow
+`.github/workflows/pages.yml` die App bei jedem Push auf `main` automatisch unter
+`https://<benutzer>.github.io/starkregen-spiegel/`.
+
+**Auf dem iPhone:** Seite in Safari öffnen → Teilen → „Zum Home-Bildschirm“.
+Die App startet dann wie eine normale App und funktioniert nach dem ersten
+Laden auch ohne Netz (Hintergrundkarte nur für bereits angesehene Bereiche).
+
+Funktionen:
+- Adresssuche über eigenen ALKIS-Adressindex (offline, ohne Rate-Limit);
+  Nominatim nur als Rückfallebene (auf Enter, max. 1 Anfrage/s)
+- Ebenen: Wassertiefe, animierte Fließwege (Richtung = Bewegung,
+  Breite = Wassermenge), Senken, Gebäude-Ampel
+- Regler für die Szenarien 30/50/80 mm in 1 h
+- Antippen eines Gebäudes: Ampel, max. Wassertiefe am Haus je Szenario,
+  Hinweis „kleine Mulde am Haus“
+- Hinweis „keine amtliche Karte“ beim ersten Start und jederzeit über den Link
 
 ## Methodik (Kurzfassung)
 
