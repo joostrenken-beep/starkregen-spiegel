@@ -124,9 +124,13 @@ Funktionen:
 - Antippen eines Gebäudes: Ampel, max. Wassertiefe am Haus je Szenario,
   Hinweis „kleine Mulde am Haus“
 - Hinweis „keine amtliche Karte“ beim ersten Start und jederzeit über den Link
-- Umschalter **Gefährdung | Risiko**: Risiko = Gefährdung am Gebäude × Schutzwürdigkeit
-  (S1–S4 aus ALKIS, angelehnt an DWA-A 118 / M 119); besonders schutzwürdige
-  Gebäude violett umrandet; Info zeigt Schutzwürdigkeit, Begründung und Schutzziel
+- Drei Ansichten für die Gebäude:
+  **Wasser am Haus** (unter 10 / 10–30 / 30–50 / über 50 cm) |
+  **Schadenspotenzial** S1–S4 (Gebäudeart aus ALKIS, angelehnt an DWA-A 118 / M 119,
+  unabhängig vom Regen) | **Risiko** (Wasser am Haus × Schadenspotenzial)
+- Filter S1–S4: jede Ansicht lässt sich auf einzelne Schadenspotenzial-Klassen
+  beschränken (z. B. Wasser am Haus nur für Schulen, Kitas, Pflege = S4)
+- Info zeigt Schadenspotenzial mit Begründung und Schutzziel
 
 ## Methodik (Kurzfassung)
 

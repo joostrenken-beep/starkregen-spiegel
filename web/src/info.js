@@ -8,6 +8,11 @@ const AMPEL_TXT = [
 
 const RISK_TXT = ['gering', 'mäßig', 'hoch', 'sehr hoch'];
 const S_TXT = { 1: 'S1 – gering', 2: 'S2 – mäßig', 3: 'S3 – hoch', 4: 'S4 – sehr hoch' };
+const GEF_TITEL = ['Kaum Wasser am Haus', 'Wasser am Haus: 10–30 cm', 'Wasser am Haus: 30–50 cm', 'Wasser am Haus: über 50 cm'];
+const GEF_TEXT = ['Nach der Berechnung sammelt sich am Gebäude kaum Wasser (unter 10 cm).',
+  'Am Gebäude können 10–30 cm Wasser stehen oder vorbeifließen.',
+  'Am Gebäude können 30–50 cm Wasser stehen oder vorbeifließen.',
+  'Am Gebäude können mehr als 50 cm Wasser stehen oder vorbeifließen.'];
 const GEF_TXT = ['unter 10 cm', '10–30 cm', '30–50 cm', 'über 50 cm'];
 
 export function parse(v) {
@@ -26,7 +31,7 @@ export function renderBuilding(f, meta, sid, view = 'gef') {
   const rows = meta.szenarien.map((x) => {
     const r = parse(p[x.id]);
     return `<tr class="${x.id === sid ? 'cur' : ''}"><td>${x.mm} mm</td>
-      <td><span class="dot ${AMPEL_TXT[r.ampel].cls}"></span>${AMPEL_TXT[r.ampel].kurz}</td>
+      <td><span class="dot g${r.gef}"></span>${GEF_TXT[r.gef]}</td>
       ${hasRisk ? `<td><span class="dot r${r.risk}"></span>${RISK_TXT[r.risk]}</td>` : ''}
       <td>${r.cm} cm</td></tr>`;
   }).join('');
@@ -35,24 +40,29 @@ export function renderBuilding(f, meta, sid, view = 'gef') {
     const zsc = meta.szenarien.find((x) => x.id === p.zz);
     const zr = parse(p[p.zz]);
     const ok = zr.gef === 0;
-    schutz = `
-    <div class="schutz"><strong>Schutzwürdigkeit ${S_TXT[p.s]}</strong><br>${esc(p.sg)}</div>
+    const box = view === 'schaden' ? '' : `<div class="schutz"><strong>Schadenspotenzial ${S_TXT[p.s]}</strong><br>${esc(p.sg)}</div>`;
+    schutz = `${box}
     ${zsc ? `<p class="ziel ${ok ? 'ja' : 'nein'}">Schutzziel (in Anlehnung an DWA-A 118): trocken bis ${zsc.mm} mm in ${zsc.dauer_h} h –
       ${ok ? 'nach der Berechnung erreicht.' : `nicht erreicht (am Haus ${GEF_TXT[zr.gef]}).`}</p>` : ''}`;
   }
-  const head = view === 'risiko' && hasRisk
-    ? `<div class="risk r${cur.risk}"><strong>Risiko ${RISK_TXT[cur.risk]}</strong>
-        <span>Gefährdung am Haus ${GEF_TXT[cur.gef]} × Schutzwürdigkeit ${S_TXT[p.s]} – bei ${sc.mm} mm in ${sc.dauer_h} h</span></div>`
-    : `<div class="ampel ${a.cls}"><strong>${a.titel}</strong><span>bei ${sc.mm} mm Regen in ${sc.dauer_h} h</span></div>
-       <p>${a.text}</p>`;
+  let head;
+  if (view === 'risiko' && hasRisk) {
+    head = `<div class="risk r${cur.risk}"><strong>Risiko ${RISK_TXT[cur.risk]}</strong>
+        <span>Wasser am Haus ${GEF_TXT[cur.gef]} × Schadenspotenzial ${S_TXT[p.s]} – bei ${sc.mm} mm in ${sc.dauer_h} h</span></div>`;
+  } else if (view === 'schaden' && hasRisk) {
+    head = `<div class="sk s${p.s}"><strong>Schadenspotenzial ${S_TXT[p.s]}</strong><span>${esc(p.sg)}</span></div>`;
+  } else {
+    head = `<div class="risk r${cur.gef}"><strong>${GEF_TITEL[cur.gef]}</strong><span>bei ${sc.mm} mm Regen in ${sc.dauer_h} h</span></div>
+       <p>${GEF_TEXT[cur.gef]}</p>`;
+  }
   return `
     <h2>${esc(p.a) || 'Gebäude ohne Adresse'}</h2>
     <p class="muted">${esc(p.art)}</p>
     ${head}
     ${cur.mulde ? '<p class="hint">⚠ Direkt am Haus gibt es eine <strong>kleine, tiefe Mulde</strong> (z. B. Kellerabgang, Lichtschacht, abgesenkte Einfahrt). Dort kann sich Wasser sammeln und ins Haus laufen.</p>' : ''}
     ${schutz}
-    <table class="scen"><thead><tr><th>Regen</th><th>Gefährdung</th>${hasRisk ? '<th>Risiko</th>' : ''}<th>max. am Haus</th></tr></thead><tbody>${rows}</tbody></table>
-    <p class="small">„max. am Haus“ = höchster Wert im 2-m-Streifen rund um das Gebäude. Schutzwürdigkeit aus öffentlichen
+    <table class="scen"><thead><tr><th>Regen</th><th>Wasser am Haus</th>${hasRisk ? '<th>Risiko</th>' : ''}<th>max. am Haus</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="small">„max. am Haus“ = höchster Wert im 2-m-Streifen rund um das Gebäude. Schadenspotenzial aus öffentlichen
       ALKIS-Daten (Gebäudefunktion, Flächennutzung); Keller sind darin nicht enthalten. Orientierungshilfe, keine amtliche Auskunft.</p>`;
 }
 

@@ -151,6 +151,7 @@ def buildings_geojson(buildings, scen_ids, bounds):
         out[s] = [f"{int(a)}|{int(round(m * 100))}|{int(bool(k))}|{int(gg)}|{int(rr)}" for a, m, k, gg, rr in
                   zip(b[f"{s}_ampel"], b[f"{s}_max_m"], b[f"{s}_kleine_mulde"], g, r)]
         out[f"r_{s}"] = [int(x) for x in r]
+        out[f"g_{s}"] = [int(x) for x in g]
     gj = json.loads(out.to_crs("EPSG:4326").to_json(drop_id=True))
     for f in gj["features"]:
         _round_geom(f["geometry"])
@@ -184,7 +185,12 @@ def write_meta(path: Path, bounds_utm, crs, scenarios, files, extra=None):
     t = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
     x0, y0 = t.transform(bounds_utm[0], bounds_utm[1])
     x1, y1 = t.transform(bounds_utm[2], bounds_utm[3])
-    meta = {"stand": date.today().isoformat(),
+    import hashlib
+    h = hashlib.sha1()
+    for f in sorted(path.parent.glob("*")):
+        if f.name != "meta.json":
+            h.update(f.read_bytes())
+    meta = {"stand": date.today().isoformat(), "version": h.hexdigest()[:10],
             "gebiet": {"bounds": [_r(x0), _r(y0), _r(x1), _r(y1)],
                        "zentrum": [_r((x0 + x1) / 2), _r((y0 + y1) / 2)]},
             "szenarien": scenarios, "dateien": files,

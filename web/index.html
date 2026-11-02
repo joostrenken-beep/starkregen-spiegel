@@ -36,8 +36,16 @@
 
   <footer class="bottombar">
     <div class="view-switch" role="group" aria-label="Ansicht">
-      <button type="button" data-view="gef" aria-pressed="true">Gefährdung</button>
+      <button type="button" data-view="gef" aria-pressed="true">Wasser am Haus</button>
+      <button type="button" data-view="schaden" aria-pressed="false">Schadens&shy;potenzial</button>
       <button type="button" data-view="risiko" aria-pressed="false">Risiko</button>
+    </div>
+    <div class="class-filter" role="group" aria-label="Gebäude nach Schadenspotenzial filtern">
+      <span>Gebäude:</span>
+      <button type="button" data-s="1" aria-pressed="true">S1</button>
+      <button type="button" data-s="2" aria-pressed="true">S2</button>
+      <button type="button" data-s="3" aria-pressed="true">S3</button>
+      <button type="button" data-s="4" aria-pressed="true">S4</button>
     </div>
     <div class="scenario">
       <label for="rain">Regen in 1 Stunde: <strong id="rain-label">50 mm</strong></label>

@@ -11,9 +11,13 @@ const BASEMAP =
 const AMPEL = { 0: '#3a9d5d', 1: '#f2b705', 2: '#d7301f' };
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const state = { meta: null, sid: null, view: 'gef', flowCache: {}, buildings: new Map(), selected: null };
+const state = { meta: null, sid: null, view: 'gef', classes: new Set([1, 2, 3, 4]), flowCache: {}, buildings: new Map(), selected: null, v: '' };
 export const RISK = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
 export const RISK_TXT = ['gering', 'mäßig', 'hoch', 'sehr hoch'];
+const GEF = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
+const SK = { 1: '#9e9e9e', 2: '#9575cd', 3: '#673ab7', 4: '#311b92' };
+const SK_TXT = { 1: 'S1 gering – Garage, Schuppen, Nebengebäude', 2: 'S2 mäßig – Wohngebäude',
+  3: 'S3 hoch – Gewerbe, Handel, Verwaltung, Versammlung', 4: 'S4 sehr hoch – Schule, Kita, Pflege, Einsatzkräfte, unterirdisch' };
 
 function store(key, val) {
   try {
@@ -24,8 +28,9 @@ function store(key, val) {
 }
 
 async function main() {
-  const meta = await fetch(DATA + 'meta.json').then((r) => r.json());
+  const meta = await fetch(DATA + 'meta.json', { cache: 'no-store' }).then((r) => r.json());
   state.meta = meta;
+  state.v = `?v=${meta.version || meta.stand}`;
   document.getElementById('stand').textContent = meta.stand;
   const scen = meta.szenarien;
   const startIdx = Math.min(1, scen.length - 1);
@@ -64,16 +69,16 @@ async function main() {
     map.addLayer({ id: 'gebiet', type: 'line', source: 'gebiet',
       paint: { 'line-color': '#0b2f7a', 'line-width': 1.5, 'line-dasharray': [3, 2], 'line-opacity': 0.6 } });
 
-    map.addSource('senken', { type: 'geojson', data: DATA + 'senken.json' });
+    map.addSource('senken', { type: 'geojson', data: DATA + 'senken.json' + state.v });
     map.addLayer({ id: 'senken', type: 'fill', source: 'senken', layout: { visibility: 'none' },
       paint: { 'fill-color': ['interpolate', ['linear'], ['get', 'tmax'], 0.1, '#e9d8f5', 0.5, '#b07cd6', 1.5, '#5b2a86'],
         'fill-opacity': 0.55, 'fill-outline-color': '#5b2a86' } });
 
-    map.addSource('tiefe', { type: 'image', url: t.url, coordinates: t.coords });
+    map.addSource('tiefe', { type: 'image', url: t.url + state.v, coordinates: t.coords });
     map.addLayer({ id: 'tiefe', type: 'raster', source: 'tiefe',
       paint: { 'raster-opacity': 0.9, 'raster-resampling': 'nearest', 'raster-fade-duration': 0 } });
 
-    const gb = await fetch(DATA + 'gebaeude.json').then((r) => r.json());
+    const gb = await fetch(DATA + 'gebaeude.json' + state.v).then((r) => r.json());
     gb.features.forEach((f) => state.buildings.set(f.properties.id, f));
     map.addSource('gebaeude', { type: 'geojson', data: gb, promoteId: 'id' });
     map.addLayer({ id: 'gebaeude', type: 'fill', source: 'gebaeude', minzoom: 13,
@@ -101,7 +106,7 @@ async function main() {
     setupViewSwitch(map);
     setupScenario(map);
     setupClicks(map);
-    const adr = await fetch(DATA + 'adressen.json').then((r) => r.json());
+    const adr = await fetch(DATA + 'adressen.json' + state.v).then((r) => r.json());
     createSearch({ map, addresses: adr, bounds: meta.gebiet.bounds, onSelect: (hit) => selectBuilding(map, hit.id, hit) });
     setupLocate(map);
     document.body.classList.add('ready');
@@ -114,21 +119,35 @@ async function main() {
   }
 }
 
+// Einfärbung der Gebäude je Ansicht
+//  gef     : Wasser am Gebäude (Gefährdungsstufe 0–3)
+//  schaden : Schadenspotenzial S1–S4 (unabhängig vom Regen)
+//  risiko  : Gefährdung × Schadenspotenzial (Risikomatrix)
 function ampelColor(sid) {
-  if (state.view === 'risiko') {
-    return ['match', ['get', `r_${sid}`], 3, RISK[3], 2, RISK[2], 1, RISK[1], RISK[0]];
-  }
-  return ['match', ['slice', ['get', sid], 0, 1], '2', AMPEL[2], '1', AMPEL[1], AMPEL[0]];
+  if (state.view === 'risiko') return ['match', ['get', `r_${sid}`], 3, RISK[3], 2, RISK[2], 1, RISK[1], RISK[0]];
+  if (state.view === 'schaden') return ['match', ['get', 's'], 4, SK[4], 3, SK[3], 2, SK[2], SK[1]];
+  return ['match', ['get', `g_${sid}`], 3, GEF[3], 2, GEF[2], 1, GEF[1], GEF[0]];
 }
 function ampelOpacity(sid) {
   if (state.view === 'risiko') return ['match', ['get', `r_${sid}`], 3, 0.9, 2, 0.85, 1, 0.75, 0.3];
-  return ['match', ['slice', ['get', sid], 0, 1], '2', 0.8, '1', 0.75, 0.35];
+  if (state.view === 'schaden') return ['match', ['get', 's'], 1, 0.45, 0.85];
+  return ['match', ['get', `g_${sid}`], 3, 0.9, 2, 0.85, 1, 0.75, 0.35];
+}
+
+function classFilter() {
+  const sel = [...state.classes];
+  return sel.length === 4 ? null : ['in', ['coalesce', ['get', 's'], 2], ['literal', sel]];
 }
 
 function applyBuildingStyle(map) {
   map.setPaintProperty('gebaeude', 'fill-color', ampelColor(state.sid));
   map.setPaintProperty('gebaeude', 'fill-opacity', ampelOpacity(state.sid));
-  map.setLayoutProperty('gebaeude-s4', 'visibility', state.view === 'risiko' ? 'visible' : 'none');
+  const f = classFilter();
+  map.setFilter('gebaeude', f);
+  map.setFilter('gebaeude-linie', f);
+  const s4 = ['==', ['get', 's'], 4];
+  map.setFilter('gebaeude-s4', state.classes.has(4) ? s4 : ['==', 1, 0]);
+  map.setLayoutProperty('gebaeude-s4', 'visibility', state.view === 'schaden' ? 'none' : 'visible');
   renderLegend();
 }
 
@@ -139,11 +158,19 @@ function setupViewSwitch(map) {
     applyBuildingStyle(map);
     if (state.selected != null) showSheet(renderBuilding(state.buildings.get(state.selected), state.meta, state.sid, state.view));
   }));
+  document.querySelectorAll('.class-filter button').forEach((b) => b.addEventListener('click', () => {
+    const k = +b.dataset.s;
+    if (state.classes.has(k) && state.classes.size > 1) state.classes.delete(k); else state.classes.add(k);
+    document.querySelectorAll('.class-filter button').forEach((x) =>
+      x.setAttribute('aria-pressed', String(state.classes.has(+x.dataset.s))));
+    applyBuildingStyle(map);
+  }));
+  applyBuildingStyle(map);
 }
 
 async function flowData(sid) {
   if (!state.flowCache[sid]) {
-    state.flowCache[sid] = fetch(DATA + `fliesswege_${sid}.json`).then((r) => r.json());
+    state.flowCache[sid] = fetch(DATA + `fliesswege_${sid}.json` + state.v).then((r) => r.json());
   }
   return state.flowCache[sid];
 }
@@ -191,16 +218,24 @@ function renderLegend() {
       const txt = next ? `${Math.round(k.ab_m * 100)}–${Math.round(next.ab_m * 100)} cm` : `über ${Math.round(k.ab_m * 100)} cm`;
       return `<div class="lg"><span class="sw" style="background:${k.farbe}"></span>${txt}</div>`;
     }).join('')}
-    ${state.view === 'risiko' ? `
-    <h3>Risiko Gebäude (Gefährdung × Schutzwürdigkeit)</h3>
-    ${[3, 2, 1, 0].map((k) => `<div class="lg"><span class="sw" style="background:${RISK[k]}"></span>${RISK_TXT[k]}</div>`).join('')}
-    <div class="lg"><span class="sw s4"></span>besonders schutzwürdig (Schule, Kita, Pflege, Einsatzkräfte …)</div>` : `
-    <h3>Gebäude: Wasser am Haus</h3>
-    <div class="lg"><span class="sw" style="background:${AMPEL[2]}"></span>ab ${m.ampel.rot_ab_m * 100} cm</div>
-    <div class="lg"><span class="sw" style="background:${AMPEL[1]}"></span>ab ${m.ampel.gelb_ab_m * 100} cm</div>
-    <div class="lg"><span class="sw" style="background:${AMPEL[0]}"></span>darunter</div>`}
+    ${legendBuildings(m)}
     <h3>Fließwege</h3>
     <div class="lg"><span class="sw line"></span>Richtung = Bewegung, Breite = Wassermenge</div>`;
+}
+
+function legendBuildings(m) {
+  const sw = (c, t) => `<div class="lg"><span class="sw" style="background:${c}"></span>${t}</div>`;
+  const s4 = '<div class="lg"><span class="sw s4"></span>Umrandung: Schadenspotenzial S4</div>';
+  const filt = state.classes.size < 4 ? `<div class="lg small">gezeigt: ${[...state.classes].sort().map((k) => `S${k}`).join(', ')}</div>` : '';
+  if (state.view === 'schaden') {
+    return `<h3>Schadenspotenzial (Gebäudeart, unabhängig vom Regen)</h3>${[4, 3, 2, 1].map((k) => sw(SK[k], SK_TXT[k])).join('')}${filt}`;
+  }
+  if (state.view === 'risiko') {
+    return `<h3>Risiko = Wasser am Gebäude × Schadenspotenzial</h3>${[3, 2, 1, 0].map((k) => sw(RISK[k], RISK_TXT[k])).join('')}${s4}${filt}`;
+  }
+  const g = m.risiko?.gefaehrdung_grenzen_m || [0.1, 0.3, 0.5];
+  return `<h3>Wasser am Gebäude</h3>
+    ${sw(GEF[3], `ab ${g[2] * 100} cm`)}${sw(GEF[2], `${g[1] * 100}–${g[2] * 100} cm`)}${sw(GEF[1], `${g[0] * 100}–${g[1] * 100} cm`)}${sw(GEF[0], `unter ${g[0] * 100} cm`)}${s4}${filt}`;
 }
 
 function setupScenario(map) {
@@ -216,7 +251,7 @@ function setupScenario(map) {
     lbl.textContent = `${sc.mm} mm`;
     state.sid = sc.id;
     const t = state.meta.dateien.tiefe[sc.id];
-    map.getSource('tiefe').updateImage({ url: t.url, coordinates: t.coords });
+    map.getSource('tiefe').updateImage({ url: t.url + state.v, coordinates: t.coords });
     applyBuildingStyle(map);
     map.getSource('fliesswege').setData(await flowData(sc.id));
     if (state.selected != null) showSheet(renderBuilding(state.buildings.get(state.selected), state.meta, state.sid, state.view));

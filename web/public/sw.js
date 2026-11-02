@@ -1,5 +1,5 @@
 // Service Worker: App offline nutzbar, Daten zwischengespeichert.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const APP = `app-${VERSION}`;
 const TILES = 'tiles-v1';
 const MAX_TILES = 1500;
@@ -26,21 +26,24 @@ self.addEventListener('fetch', (e) => {
       const hit = await c.match(req);
       if (hit) return hit;
       const res = await fetch(req);
-      if (res.ok) { c.put(req, res.clone()); trim(c); }
+      if (res.ok) { await c.put(req, res.clone()); trim(c); }
       return res;
     }));
     return;
   }
   if (url.origin !== self.location.origin) return;            // z. B. Nominatim: nie cachen
   if (req.mode === 'navigate') {                              // Seite: Netz zuerst
-    e.respondWith(fetch(req).then((res) => { caches.open(APP).then((c) => c.put(req, res.clone())); return res; })
-      .catch(() => caches.match('./index.html')));
+    e.respondWith(fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(APP).then((c) => c.put(req, copy));
+      return res;
+    }).catch(() => caches.match('./index.html')));
     return;
   }
-  // Daten und Assets: Cache, im Hintergrund aktualisieren
-  e.respondWith(caches.open(APP).then(async (c) => {
-    const hit = await c.match(req);
-    const net = fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }).catch(() => hit);
-    return hit || net;
-  }));
+  // Daten und Programmcode: immer zuerst aus dem Netz (sonst passen alte Daten nicht
+  // zum neuen Code), Zwischenspeicher nur als Rückfall ohne Netz
+  e.respondWith(fetch(req).then((res) => {
+    if (res.ok) { const copy = res.clone(); caches.open(APP).then((c) => c.put(req, copy)); }
+    return res;
+  }).catch(() => caches.match(req, { ignoreSearch: true })));
 });
