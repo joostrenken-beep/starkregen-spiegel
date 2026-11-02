@@ -130,7 +130,9 @@ ausgabe:
   web_ordner: web/public/data
 
 web:
-  fliessweg_min_m3: 30         # Fließwege erst ab diesem durchgeflossenen Volumen zeigen
+  fliessweg_min_m3: 30         # Fließwege ab diesem Volumen zeigen – im Nahbereich von Gebäuden
+  fliessweg_nahbereich_m: 50
+  fliessweg_aussen_min_m3: 300 # im Außenbereich nur Hauptfließwege
   minzoom: 11                  # Wassertiefe-Kacheln (PMTiles) von … bis
   maxzoom: 16
   zellen_minzoom: 14           # Gebäude, Fließwege, Senken ab dieser Zoomstufe nachladen

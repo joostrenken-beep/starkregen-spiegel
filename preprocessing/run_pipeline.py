@@ -290,10 +290,15 @@ def run(cfg, bbox, show, out, args):
             web_depths[sid] = depth[rs, cs]
             log(f"  Web: Tiefe-Bild + {len(fl['features'])} Fließweg-Linien")
         if block and not sc.get("ohne_verluste"):
+            wc = cfg.get("web", {})
+            if "near_bld" not in result:
+                d = int(wc.get("fliessweg_nahbereich_m", 50) / cell)
+                result["near_bld"] = ndimage.maximum_filter(roof.astype(np.uint8), size=2 * d + 1) > 0
             result["depth"][sc["id"]] = depth[rs, cs].astype(np.float32)
             result["flows"][sc["id"]] = web_export.flow_lines(
                 dem_b, valid, res.source, res.absorb, transform, crs, rs, cs,
-                min_v=float(cfg.get("web", {}).get("fliessweg_min_m3", 30)))
+                min_v=float(wc.get("fliessweg_min_m3", 30)), simplify=1.5,
+                near=result["near_bld"], min_v_far=float(wc.get("fliessweg_aussen_min_m3", 300)))
         if vh.get("aktiv") and sc["id"] == vh["szenario"]["id"]:
             log("Vergleich mit Hinweiskarte Starkregengefahren (WMS) …")
             ref, unk = hwk.fetch_class_raster(show, vh["wms_layer"])
@@ -416,6 +421,7 @@ def run(cfg, bbox, show, out, args):
         log(f"Web-Export: {web} ({sizes:.1f} MB)")
     log(f"Fertig. Ergebnisse in {out}")
     if block:
+        result.pop("near_bld", None)
         result.update({"buildings": buildings, "stats": stats, "crs": crs, "tcore": tcore,
                        "addresses": layers["addresses"] if layers is not None else None,
                        "sinks": web_export.sinks_geojson(sinks[rs, cs], result["depth"], tcore, crs)})
