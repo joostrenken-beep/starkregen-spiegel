@@ -139,10 +139,18 @@ def buildings_geojson(buildings, scen_ids, bounds):
                     for s, n in zip(b["bez"], b["hnr"])]
     if "building" in b:
         out["art"] = b["building"].fillna("")
+    has_risk = "schutz" in b
+    if has_risk:
+        out["s"] = b["schutz"].astype(int)
+        out["sg"] = b["schutz_grund"]
+        out["zz"] = b["schutzziel_szenario"]
     for s in scen_ids:
-        # kompakt: "Ampel|max cm|kleine Mulde"
-        out[s] = [f"{int(a)}|{int(round(m * 100))}|{int(bool(k))}" for a, m, k in
-                  zip(b[f"{s}_ampel"], b[f"{s}_max_m"], b[f"{s}_kleine_mulde"])]
+        # kompakt: "Ampel|max cm|kleine Mulde|Gefährdung 0-3|Risiko 0-3"
+        g = b[f"{s}_gef"] if has_risk else [0] * len(b)
+        r = b[f"{s}_risiko"] if has_risk else [0] * len(b)
+        out[s] = [f"{int(a)}|{int(round(m * 100))}|{int(bool(k))}|{int(gg)}|{int(rr)}" for a, m, k, gg, rr in
+                  zip(b[f"{s}_ampel"], b[f"{s}_max_m"], b[f"{s}_kleine_mulde"], g, r)]
+        out[f"r_{s}"] = [int(x) for x in r]
     gj = json.loads(out.to_crs("EPSG:4326").to_json(drop_id=True))
     for f in gj["features"]:
         _round_geom(f["geometry"])

@@ -78,6 +78,7 @@ Ergebnisse unter `data/processed/test/` bzw. `data/processed/pilot/`:
 | `senken_tiefe.tif` | Senkentiefe bei Vollfüllung (m) |
 | `gebaeude_ergebnis.gpkg` | je Gebäude max. Tiefe im 2-m-Ring (für den Steckbrief) |
 | `statistik.json` | Wasserbilanz je Szenario (muss aufgehen!) |
+| `risiko_objektliste.csv` | S3/S4-Gebäude im Kerngebiet mit Schutzwürdigkeit, Begründung, Gefährdung/Risiko je Szenario, Schutzziel erreicht ja/nein (Excel: Trennzeichen „;“) |
 | `plausibilitaet.md` | Plausibilitätsbericht: Wo liegen die Senken (Gewässer, Unterführung, Straße, Garten …)? Folgen die Fließwege Gräben/Straßen? Die 15 größten Senken mit Links zu Luftbild und OSM |
 | `plausi/senke_NN.png` | Bildausschnitte der größten Senken |
 
@@ -123,6 +124,9 @@ Funktionen:
 - Antippen eines Gebäudes: Ampel, max. Wassertiefe am Haus je Szenario,
   Hinweis „kleine Mulde am Haus“
 - Hinweis „keine amtliche Karte“ beim ersten Start und jederzeit über den Link
+- Umschalter **Gefährdung | Risiko**: Risiko = Gefährdung am Gebäude × Schutzwürdigkeit
+  (S1–S4 aus ALKIS, angelehnt an DWA-A 118 / M 119); besonders schutzwürdige
+  Gebäude violett umrandet; Info zeigt Schutzwürdigkeit, Begründung und Schutzziel
 
 ## Methodik (Kurzfassung)
 

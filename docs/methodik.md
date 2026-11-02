@@ -82,7 +82,47 @@ erster Pilotlauf (Kerngebiet 2 × 2 km):
 - Stand mit begrenzten Durchlässen: Fläche ≥ 10 cm Treffer 45 %, Fehlalarm 7 %;
   ≥ 30 cm Treffer 54 %; **Gebäude-Ampel gleich bei 72 %** von 5 286 Gebäuden.
 
-## 7. Grenzen (gehören in den Hinweistext der App)
+## 7. Risikobetrachtung: Gefährdung × Schutzwürdigkeit
+Zweite Betrachtungsweise neben der reinen Gefährdung („Risiko“-Ansicht in der App).
+
+**Schutzwürdigkeit S1–S4** – nur aus öffentlichen ALKIS-Daten (Gebäudefunktion,
+Lage zur Erdoberfläche, Bauart, Grundfläche, tatsächliche Nutzung des Flurstücks),
+in Anlehnung an DWA-A 118 (2006), Tab. 3 *Empfohlene Überflutungshäufigkeiten*,
+und DWA-M 119 (Schadenspotenzial):
+
+| Klasse | Gebäude (Beispiele) | Bezug |
+|---|---|---|
+| S1 gering | Garagen, Schuppen, Nebengebäude, offene Hallen, Landwirtschaft | A 118: ländliche Gebiete 1 in 10 a |
+| S2 mäßig | Wohngebäude (Keller unbekannt) | A 118: Wohngebiete 1 in 20 a |
+| S3 hoch | Gewerbe, Handel, Wohn-/Geschäftshäuser, Verwaltung, Versammlung, Kirchen, Versorgung | A 118: Stadtzentren, Gewerbe 1 in 30 a |
+| S4 sehr hoch | Schulen, Kitas, Krankenhaus/Pflege (auch über Flurstücksnutzung Gesundheit/Soziales/Bildung/Sicherheit), Feuerwehr, Polizei, Tiefgaragen/unterirdische Gebäude, KRITIS | A 118: unterirdische Anlagen 1 in 50 a; M 119: sehr hohes Schadenspotenzial |
+
+Nebengebäude: ALKIS „Gebäude für Wirtschaft oder Gewerbe“ < 40 m² bzw. < 150 m² auf
+Wohnbaufläche. **Keller sind in öffentlichen Daten nicht enthalten** – eine
+Unterscheidung „Wohnen ohne Keller“ braucht Ortsdaten (z. B. Bauakte, Begehung).
+Denkmalschutz ist nicht als offener Datensatz verfügbar.
+
+**Gefährdung am Gebäude** (Tiefe auf ≥ 5 m² im 2-m-Ring): 0 < 10 cm, 1 ≥ 10 cm,
+2 ≥ 30 cm, 3 ≥ 50 cm.
+
+**Risikomatrix** (vgl. M 119), Ergebnis gering / mäßig / hoch / sehr hoch:
+
+| Gefährdung \ Schutzwürdigkeit | S1 | S2 | S3 | S4 |
+|---|---|---|---|---|
+| < 10 cm | gering | gering | gering | mäßig |
+| 10–30 cm | gering | mäßig | mäßig | hoch |
+| 30–50 cm | mäßig | mäßig | hoch | sehr hoch |
+| ≥ 50 cm | mäßig | hoch | sehr hoch | sehr hoch |
+
+**Schutzziel (A 118-orientiert):** je Klasse ein Szenario, bis zu dem das Gebäude
+trocken (< 10 cm) bleiben soll: S1/S2 → 30 mm, S3 → 50 mm, S4 → 80 mm in 1 h.
+Die Zuordnung Szenario ↔ Wiederkehrzeit ist eine Annahme und mit KOSTRA-DWD-2020
+festzulegen. Ausgabe `risiko_objektliste.csv`: alle S3/S4-Gebäude im Kerngebiet,
+sortiert nach Risiko – Grundlage für Objektschutz-Gespräche.
+
+Alle Regeln, Matrix und Schutzziele: `config/pilot.yaml`, Abschnitt `risiko`.
+
+## 8. Grenzen (gehören in den Hinweistext der App)
 - Statisch: keine Ganglinien, keine Fließzeiten, kein Rückstau, kein Impuls.
   Die Regendauer wirkt nur über Kanalabschlag und Infiltration.
 - Fließtiefe ist eine Näherung für Normalabfluss, kein 2D-Ergebnis.

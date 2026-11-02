@@ -135,6 +135,45 @@
   "min_flaeche_m2": 5
  },
  "kanal_mm_h": 20.0,
+ "risiko": {
+  "matrix": [
+   [
+    0,
+    0,
+    0,
+    1
+   ],
+   [
+    0,
+    1,
+    1,
+    2
+   ],
+   [
+    1,
+    1,
+    2,
+    3
+   ],
+   [
+    1,
+    2,
+    3,
+    3
+   ]
+  ],
+  "gefaehrdung_grenzen_m": [
+   0.1,
+   0.3,
+   0.5
+  ],
+  "schutzziel_szenario": {
+   "1": "p30",
+   "2": "p30",
+   "3": "p50",
+   "4": "p80"
+  }
+ },
  "quellen": [
   "DGM1 © LGLN (dl-de/by-2-0)",
   "ALKIS © LGLN (dl-de/by-2-0)"

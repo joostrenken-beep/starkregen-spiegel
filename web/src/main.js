@@ -11,7 +11,9 @@ const BASEMAP =
 const AMPEL = { 0: '#3a9d5d', 1: '#f2b705', 2: '#d7301f' };
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const state = { meta: null, sid: null, flowCache: {}, buildings: new Map(), selected: null };
+const state = { meta: null, sid: null, view: 'gef', flowCache: {}, buildings: new Map(), selected: null };
+export const RISK = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
+export const RISK_TXT = ['gering', 'mäßig', 'hoch', 'sehr hoch'];
 
 function store(key, val) {
   try {
@@ -76,6 +78,10 @@ async function main() {
     map.addSource('gebaeude', { type: 'geojson', data: gb, promoteId: 'id' });
     map.addLayer({ id: 'gebaeude', type: 'fill', source: 'gebaeude', minzoom: 13,
       paint: { 'fill-color': ampelColor(state.sid), 'fill-opacity': ampelOpacity(state.sid) } });
+    // besonders schutzwürdige Gebäude (S4) in der Risiko-Ansicht hervorheben
+    map.addLayer({ id: 'gebaeude-s4', type: 'line', source: 'gebaeude', minzoom: 13,
+      filter: ['==', ['get', 's'], 4], layout: { visibility: 'none' },
+      paint: { 'line-color': '#6a1b9a', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1.5, 18, 3.5] } });
     map.addLayer({ id: 'gebaeude-linie', type: 'line', source: 'gebaeude', minzoom: 15,
       paint: { 'line-color': '#444', 'line-width': 0.4, 'line-opacity': 0.6 } });
     map.addLayer({ id: 'gebaeude-auswahl', type: 'line', source: 'gebaeude',
@@ -92,6 +98,7 @@ async function main() {
     if (!reducedMotion) animateFlow(map);
 
     setupLayerPanel(map);
+    setupViewSwitch(map);
     setupScenario(map);
     setupClicks(map);
     const adr = await fetch(DATA + 'adressen.json').then((r) => r.json());
@@ -108,10 +115,30 @@ async function main() {
 }
 
 function ampelColor(sid) {
+  if (state.view === 'risiko') {
+    return ['match', ['get', `r_${sid}`], 3, RISK[3], 2, RISK[2], 1, RISK[1], RISK[0]];
+  }
   return ['match', ['slice', ['get', sid], 0, 1], '2', AMPEL[2], '1', AMPEL[1], AMPEL[0]];
 }
 function ampelOpacity(sid) {
+  if (state.view === 'risiko') return ['match', ['get', `r_${sid}`], 3, 0.9, 2, 0.85, 1, 0.75, 0.3];
   return ['match', ['slice', ['get', sid], 0, 1], '2', 0.8, '1', 0.75, 0.35];
+}
+
+function applyBuildingStyle(map) {
+  map.setPaintProperty('gebaeude', 'fill-color', ampelColor(state.sid));
+  map.setPaintProperty('gebaeude', 'fill-opacity', ampelOpacity(state.sid));
+  map.setLayoutProperty('gebaeude-s4', 'visibility', state.view === 'risiko' ? 'visible' : 'none');
+  renderLegend();
+}
+
+function setupViewSwitch(map) {
+  document.querySelectorAll('.view-switch button').forEach((b) => b.addEventListener('click', () => {
+    state.view = b.dataset.view;
+    document.querySelectorAll('.view-switch button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    applyBuildingStyle(map);
+    if (state.selected != null) showSheet(renderBuilding(state.buildings.get(state.selected), state.meta, state.sid, state.view));
+  }));
 }
 
 async function flowData(sid) {
@@ -146,12 +173,16 @@ function setupLayerPanel(map) {
     btn.setAttribute('aria-expanded', String(!panel.hidden));
   });
   const groups = { tiefe: ['tiefe'], fliesswege: ['fliesswege', 'fliesswege-anim'], senken: ['senken'],
-    gebaeude: ['gebaeude', 'gebaeude-linie'] };
+    gebaeude: ['gebaeude', 'gebaeude-linie', 'gebaeude-s4'] };
   panel.querySelectorAll('input[data-layer]').forEach((cb) => {
     cb.addEventListener('change', () => {
       groups[cb.dataset.layer].forEach((id) => map.setLayoutProperty(id, 'visibility', cb.checked ? 'visible' : 'none'));
     });
   });
+  renderLegend();
+}
+
+function renderLegend() {
   const m = state.meta;
   document.getElementById('legend').innerHTML = `
     <h3>Max. Wassertiefe</h3>
@@ -160,10 +191,14 @@ function setupLayerPanel(map) {
       const txt = next ? `${Math.round(k.ab_m * 100)}–${Math.round(next.ab_m * 100)} cm` : `über ${Math.round(k.ab_m * 100)} cm`;
       return `<div class="lg"><span class="sw" style="background:${k.farbe}"></span>${txt}</div>`;
     }).join('')}
-    <h3>Gebäude am Haus</h3>
+    ${state.view === 'risiko' ? `
+    <h3>Risiko Gebäude (Gefährdung × Schutzwürdigkeit)</h3>
+    ${[3, 2, 1, 0].map((k) => `<div class="lg"><span class="sw" style="background:${RISK[k]}"></span>${RISK_TXT[k]}</div>`).join('')}
+    <div class="lg"><span class="sw s4"></span>besonders schutzwürdig (Schule, Kita, Pflege, Einsatzkräfte …)</div>` : `
+    <h3>Gebäude: Wasser am Haus</h3>
     <div class="lg"><span class="sw" style="background:${AMPEL[2]}"></span>ab ${m.ampel.rot_ab_m * 100} cm</div>
     <div class="lg"><span class="sw" style="background:${AMPEL[1]}"></span>ab ${m.ampel.gelb_ab_m * 100} cm</div>
-    <div class="lg"><span class="sw" style="background:${AMPEL[0]}"></span>darunter</div>
+    <div class="lg"><span class="sw" style="background:${AMPEL[0]}"></span>darunter</div>`}
     <h3>Fließwege</h3>
     <div class="lg"><span class="sw line"></span>Richtung = Bewegung, Breite = Wassermenge</div>`;
 }
@@ -182,10 +217,9 @@ function setupScenario(map) {
     state.sid = sc.id;
     const t = state.meta.dateien.tiefe[sc.id];
     map.getSource('tiefe').updateImage({ url: t.url, coordinates: t.coords });
-    map.setPaintProperty('gebaeude', 'fill-color', ampelColor(sc.id));
-    map.setPaintProperty('gebaeude', 'fill-opacity', ampelOpacity(sc.id));
+    applyBuildingStyle(map);
     map.getSource('fliesswege').setData(await flowData(sc.id));
-    if (state.selected != null) showSheet(renderBuilding(state.buildings.get(state.selected), state.meta, state.sid));
+    if (state.selected != null) showSheet(renderBuilding(state.buildings.get(state.selected), state.meta, state.sid, state.view));
   });
 }
 
@@ -216,7 +250,7 @@ function selectBuilding(map, id, hit, fly = true) {
   } else {
     state.selected = id;
     map.setFeatureState({ source: 'gebaeude', id }, { sel: true });
-    showSheet(renderBuilding(f, state.meta, state.sid));
+    showSheet(renderBuilding(f, state.meta, state.sid, state.view));
   }
   if (fly && hit) {
     // Karte so verschieben, dass das Gebäude nicht unter dem Info-Fenster liegt

@@ -30,11 +30,15 @@
     <label><input type="checkbox" data-layer="tiefe" checked /> Wassertiefe</label>
     <label><input type="checkbox" data-layer="fliesswege" checked /> Fließwege (animiert)</label>
     <label><input type="checkbox" data-layer="senken" /> Senken (Mulden)</label>
-    <label><input type="checkbox" data-layer="gebaeude" checked /> Gebäude-Ampel</label>
+    <label><input type="checkbox" data-layer="gebaeude" checked /> Gebäude (Ampel bzw. Risiko)</label>
     <div class="legend" id="legend"></div>
   </section>
 
   <footer class="bottombar">
+    <div class="view-switch" role="group" aria-label="Ansicht">
+      <button type="button" data-view="gef" aria-pressed="true">Gefährdung</button>
+      <button type="button" data-view="risiko" aria-pressed="false">Risiko</button>
+    </div>
     <div class="scenario">
       <label for="rain">Regen in 1 Stunde: <strong id="rain-label">50 mm</strong></label>
       <input id="rain" type="range" min="0" max="2" step="1" value="1" list="rain-ticks" />

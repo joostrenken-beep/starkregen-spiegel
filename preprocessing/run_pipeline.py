@@ -26,7 +26,7 @@ from scipy import ndimage
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from starkregen import alkis, dgm, hydro, fetch, hwk, landcover, osm, plausi, preview, web_export  # noqa: E402
+from starkregen import alkis, dgm, hydro, fetch, hwk, landcover, osm, plausi, preview, schutz, web_export  # noqa: E402
 from starkregen.model import analyse_terrain, breach_corridors, manning_depth, run_fill_spill  # noqa: E402
 
 
@@ -187,6 +187,12 @@ def main():
     write_tif(out / "dgm_eingebrannt.tif", np.where(valid, dem_b, np.nan), transform, crs)
 
     ring_id = landcover.building_ring(bid, cfg["gebaeude"]["ring_breite"])
+    rcfg = cfg.get("risiko")
+    if rcfg and buildings is not None and len(buildings) and layers is not None and "tn__bez" in layers["areas"]:
+        kl, gr = schutz.classify(buildings, layers["areas"], cfg)
+        buildings["schutz"] = kl
+        buildings["schutz_grund"] = gr
+        log("Schutzwürdigkeit: " + ", ".join(f"S{k} {schutz.KLASSEN[k]}: {(kl == k).sum()}" for k in (1, 2, 3, 4)))
     nman = np.where(sealed > 0.5, cfg["abfluss"]["manning_n"]["versiegelt"],
                     cfg["abfluss"]["manning_n"]["unversiegelt"])
 
@@ -246,6 +252,15 @@ def main():
             bil["gebaeude_gelb"] = int((ampel[1:] == 1).sum())
             bil["gebaeude_rot"] = int((ampel[1:] == 2).sum())
             bil["gebaeude_hinweis_kleine_mulde"] = int(mulde[1:].sum())
+            if "schutz" in buildings:
+                gef = schutz.hazard_level(depth, ring_id, nb, amin, rcfg["gefaehrdung_grenzen_m"])
+                ri = schutz.risk(gef, buildings["schutz"].to_numpy(), rcfg["matrix"])
+                buildings[f"{sid}_gef"] = gef
+                buildings[f"{sid}_risiko"] = ri
+                bil["risiko_gebaeude"] = {n: int((ri == k).sum()) for k, n in
+                                          enumerate(["gering", "maessig", "hoch", "sehr_hoch"])}
+                log(f"  Risiko Gebäude: hoch {bil['risiko_gebaeude']['hoch']}, "
+                    f"sehr hoch {bil['risiko_gebaeude']['sehr_hoch']}")
         stats["szenarien"][sc["id"]] = bil
         if do_web and not sc.get("ohne_verluste"):
             sid = sc["id"]
@@ -320,7 +335,29 @@ def main():
                            f"Starkregen-Spiegel – {P} mm in {T} h (Blockregen) – Orientierung, keine amtliche Karte")
 
     if buildings is not None and len(buildings):
-        cols = ["osm_id", "geometry"] + [c for c in ("building", "bez", "hnr") if c in buildings.columns]
+        # Schutzziel (A 118-orientiert): trocken (< 10 cm) bis zum Szenario der Schutzklasse
+        if "schutz" in buildings:
+            zz = {int(k): v for k, v in rcfg["schutzziel_szenario"].items()}
+            ziel = [zz[int(k)] for k in buildings["schutz"]]
+            buildings["schutzziel_szenario"] = ziel
+            buildings["schutzziel_erreicht"] = [int(buildings.at[i, f"{z}_gef"]) == 0
+                                                for i, z in zip(buildings.index, ziel)]
+            objs = buildings[buildings["schutz"] >= 3].copy()
+            objs["adresse"] = [f"{a} {b}" if isinstance(a, str) else "" for a, b in zip(objs.get("bez"), objs.get("hnr"))]
+            objs["max_risiko"] = objs[[f"{x['id']}_risiko" for x in cfg["szenarien"]]].max(axis=1)
+            c = objs.geometry.centroid
+            objs["x_utm"], objs["y_utm"] = c.x.round(1), c.y.round(1)
+            keep = ["adresse", "building", "schutz", "schutz_grund", "schutzziel_szenario", "schutzziel_erreicht",
+                    "max_risiko"] + [f"{x['id']}_{k}" for x in cfg["szenarien"] for k in ("gef", "risiko", "max_m")] \
+                + ["x_utm", "y_utm"]
+            inside = (c.x >= show[0]) & (c.x <= show[2]) & (c.y >= show[1]) & (c.y <= show[3])
+            objs[inside].sort_values(["max_risiko", "schutz"], ascending=False)[keep].to_csv(
+                out / "risiko_objektliste.csv", index=False, sep=";", decimal=",")
+            log(f"Objektliste S3/S4 (Kerngebiet): {int(inside.sum())} Gebäude, davon Schutzziel verfehlt: "
+                f"{int((~objs[inside]['schutzziel_erreicht']).sum())} → risiko_objektliste.csv")
+        cols = ["osm_id", "geometry"] + [c for c in ("building", "bez", "hnr", "schutz", "schutz_grund",
+                                                    "schutzziel_szenario", "schutzziel_erreicht")
+                                         if c in buildings.columns]
         cols = cols + [c for c in buildings.columns if c.split("_", 1)[0] in {x["id"] for x in runs}]
         buildings[cols].to_file(out / "gebaeude_ergebnis.gpkg", driver="GPKG")
     (out / "statistik.json").write_text(json.dumps(stats, indent=2, ensure_ascii=False))
@@ -343,6 +380,9 @@ def main():
                  "label": f"{x['niederschlag_mm']} mm in {x['dauer_h']} h"} for x in cfg["szenarien"]]
         web_export.write_meta(web / "meta.json", show, crs, scen, files, {
             "ampel": cfg["ampel"], "kanal_mm_h": cfg["abfluss"]["kanal"]["abschlag_mm_h"],
+            "risiko": {"matrix": rcfg["matrix"], "gefaehrdung_grenzen_m": rcfg["gefaehrdung_grenzen_m"],
+                       "schutzziel_szenario": {str(k): v for k, v in rcfg["schutzziel_szenario"].items()}}
+            if rcfg else None,
             "quellen": ["DGM1 © LGLN (dl-de/by-2-0)", "ALKIS © LGLN (dl-de/by-2-0)"],
             "vergleich_hwk": stats.get("vergleich_hwk", {}).get("gebaeude_ampel")})
         sizes = sum(f.stat().st_size for f in web.glob("*")) / 1e6

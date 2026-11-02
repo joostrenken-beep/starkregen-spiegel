@@ -79,3 +79,15 @@ dialog h2 { margin-top: 0; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .error { position: absolute; inset: auto 10px 50% 10px; background: var(--rot); color: #fff; padding: 14px; border-radius: 10px; z-index: 10; }
 .maplibregl-ctrl-top-right { top: var(--safe-top); }
+
+.view-switch { display: flex; gap: 4px; background: var(--blau-hell); border-radius: 10px; padding: 3px; margin-bottom: 8px; }
+.view-switch button { flex: 1; border: 0; background: transparent; color: var(--text); padding: 7px 6px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+.view-switch button[aria-pressed="true"] { background: var(--bg); color: var(--blau); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.sw.s4 { background: transparent; border: 2.5px solid #6a1b9a; }
+.risk { display: flex; flex-direction: column; padding: 10px 12px; border-radius: 10px; color: #fff; margin: 6px 0 10px; }
+.risk span { font-size: 13px; opacity: .92; }
+.risk.r0 { background: #3a9d5d; } .risk.r1 { background: #f2b705; color: #1b1f24; } .risk.r2 { background: #e8590c; } .risk.r3 { background: #a50f15; }
+.dot.r0 { background: #3a9d5d; } .dot.r1 { background: #f2b705; } .dot.r2 { background: #e8590c; } .dot.r3 { background: #a50f15; }
+.schutz { border-left: 4px solid #6a1b9a; padding: 6px 10px; margin: 8px 0; background: var(--blau-hell); border-radius: 0 8px 8px 0; font-size: 14px; }
+.ziel { font-size: 14px; margin: 6px 0; }
+.ziel.nein { color: var(--rot); font-weight: 600; } .ziel.ja { color: var(--gruen); font-weight: 600; }
