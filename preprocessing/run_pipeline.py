@@ -22,7 +22,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from starkregen import dgm, landcover, osm, preview  # noqa: E402
+from starkregen import dgm, landcover, osm, plausi, preview  # noqa: E402
 from starkregen.model import analyse_terrain, manning_depth, run_fill_spill  # noqa: E402
 
 
@@ -79,6 +79,7 @@ def main():
     water = np.zeros(shape, bool)
     dem = dem0.copy()
     buildings = None
+    layers = None
     n_culv = 0
     if not args.ohne_osm:
         osm_path = ROOT / "data/raw/osm/osm_rechengebiet.json"
@@ -121,6 +122,7 @@ def main():
              "durchlaesse": n_culv, "szenarien": {}}
 
     # 4) Szenarien ------------------------------------------------------------
+    plausi_id = cfg["szenarien"][len(cfg["szenarien"]) // 2]["id"]
     for sc in cfg["szenarien"]:
         P, T = sc["niederschlag_mm"], sc["dauer_h"]
         r_m, bil = landcover.runoff(P, T, sealed, roof, ring_id, bid, water, cfg)
@@ -148,6 +150,13 @@ def main():
             bil["gebaeude_gelb"] = int(((mx[1:] >= amp["gelb_ab_m"]) & (mx[1:] < amp["rot_ab_m"])).sum())
             bil["gebaeude_rot"] = int((mx[1:] >= amp["rot_ab_m"]).sum())
         stats["szenarien"][sc["id"]] = bil
+        if sc["id"] == plausi_id:
+            log("Plausibilitätsbericht …")
+            plausi.report(out, dem_b[rs, cs], sinks[rs, cs], res.flow_volume[rs, cs], depth[rs, cs],
+                          roof[rs, cs], transform * transform.translation(cs.start, rs.start), crs,
+                          {k: v.cx[extent[0]:extent[1], extent[2]:extent[3]] for k, v in layers.items()}
+                          if layers is not None else None,
+                          scenario_label=f"({P} mm in {T} h)")
         log(f"{sc['id']}: {P} mm/{T} h → Oberflächenabfluss {bil['oberflaechenabfluss_m3']:,.0f} m³, "
             f"in Senken {res.stored:,.0f} m³, aus Gebiet {res.to_ocean:,.0f} m³, "
             f"Bilanzfehler {bil['bilanzfehler_m3']:.2e} m³")

@@ -77,6 +77,16 @@ Ergebnisse unter `data/processed/test/` bzw. `data/processed/pilot/`:
 | `senken_tiefe.tif` | Senkentiefe bei Vollfüllung (m) |
 | `gebaeude_ergebnis.gpkg` | je Gebäude max. Tiefe im 2-m-Ring (für den Steckbrief) |
 | `statistik.json` | Wasserbilanz je Szenario (muss aufgehen!) |
+| `plausibilitaet.md` | Plausibilitätsbericht: Wo liegen die Senken (Gewässer, Unterführung, Straße, Garten …)? Folgen die Fließwege Gräben/Straßen? Die 15 größten Senken mit Links zu Luftbild und OSM |
+| `plausi/senke_NN.png` | Bildausschnitte der größten Senken |
+
+## Plausibilität ohne Ortskenntnis
+
+1. **Plausibilitätsbericht** (automatisch, s. o.) – Senken werden anhand von OSM
+   eingeordnet; „damm“ = Verdacht auf fehlenden Durchlass.
+2. **Vergleich mit der Hinweiskarte Starkregengefahren** (BKG/NLWKN,
+   hydrodynamisches 2D-Modell, WMS `https://sgx.geodatenzentrum.de/wms_starkregen`) –
+   unabhängige Referenz; Vergleichsskript folgt, sobald der Host freigeschaltet ist.
 
 ## Methodik (Kurzfassung)
 

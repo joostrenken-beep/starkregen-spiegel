@@ -27,6 +27,7 @@ QUERY = """[out:json][timeout:180];
   relation["landuse"]["type"="multipolygon"]({bbox});
   way["waterway"]({bbox});
   way["natural"="water"]({bbox});
+  way["railway"]({bbox});
   nwr["addr:housenumber"]({bbox});
 );
 out geom;"""
@@ -73,7 +74,8 @@ def _ring(geom):
 def load(path: Path, crs="EPSG:25832") -> dict[str, gpd.GeoDataFrame]:
     """Liest Overpass-JSON ('out geom') und gibt Layer im Ziel-KBS zurück."""
     data = json.loads(Path(path).read_text())
-    rows = {"buildings": [], "highways": [], "areas": [], "waterways": [], "addresses": []}
+    rows = {"buildings": [], "highways": [], "areas": [], "waterways": [], "railways": [],
+            "addresses": []}
     for el in data["elements"]:
         tags = el.get("tags", {})
         geom = None
@@ -102,7 +104,8 @@ def load(path: Path, crs="EPSG:25832") -> dict[str, gpd.GeoDataFrame]:
             continue
         rec = {"osm_id": f"{el['type'][0]}{el['id']}", "geometry": geom, **{
             k: tags.get(k) for k in ("building", "highway", "landuse", "amenity", "waterway",
-                                     "tunnel", "natural", "area:highway", "name",
+                                     "tunnel", "bridge", "railway", "natural", "water",
+                                     "area:highway", "name",
                                      "addr:street", "addr:housenumber", "addr:postcode",
                                      "addr:city")}}
         if "addr:housenumber" in tags:
@@ -112,6 +115,8 @@ def load(path: Path, crs="EPSG:25832") -> dict[str, gpd.GeoDataFrame]:
             rows["buildings"].append(rec)
         elif "highway" in tags and geom.geom_type == "LineString":
             rows["highways"].append(rec)
+        elif "railway" in tags and geom.geom_type == "LineString":
+            rows["railways"].append(rec)
         elif "waterway" in tags and geom.geom_type == "LineString":
             rows["waterways"].append(rec)
         elif geom.geom_type in ("Polygon", "MultiPolygon"):
