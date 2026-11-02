@@ -6,7 +6,9 @@ es sich sammelt und wie hoch es an der Hauswand stehen könnte.
 
 > **Orientierungshilfe – keine amtliche Starkregengefahrenkarte, keine Haftung.**
 
-Pilotgebiet: Osterholz-Scharmbeck, Innenstadt (2 × 2 km, gerechnet mit 1 km Puffer).
+Gebiet: **Stadt Osterholz-Scharmbeck, 147 km²** (alle 11 Gemarkungen), gerechnet in
+20 Blöcken à 4 × 4 km mit je 1 km Puffer. Der Pilot (Innenstadt 2 × 2 km) bleibt als
+schnelles Testgebiet erhalten (`config/pilot.yaml`).
 
 ## Stand
 
@@ -60,7 +62,23 @@ STAC-Katalog `dgm.stac.lgln.niedersachsen.de`) oder manuell, z. B.
 `docs/overpass_abfrage.txt` auf <https://overpass-turbo.eu> ausführen,
 „Export → Rohdaten (JSON)“ und als `data/raw/osm/osm_rechengebiet.json` speichern.
 
-### 3. Rechnen
+### 3. Rechnen – ganzes Stadtgebiet (Web-App)
+
+```bash
+python preprocessing/run_stadt.py --config config/osterholz-scharmbeck.yaml --fetch
+```
+
+- lädt DGM1-Kacheln und ALKIS, erzeugt den Stadtumriss aus ALKIS (Gemeinde 03356007)
+- rechnet Block für Block; fertige Blöcke liegen in `data/processed/stadt/bloecke/`.
+  **Abbruch? Einfach denselben Befehl erneut starten** – fertige Blöcke werden übersprungen.
+- schreibt die Web-Daten nach `web/public/data/` (Wassertiefe als PMTiles-Kacheln je
+  Szenario, 1-km-Pakete in `zellen/`, Adressen mit Ortsteil, Stadtumriss)
+- Gesamtergebnisse: `data/processed/stadt/gebaeude_ergebnis.gpkg`,
+  `risiko_objektliste.csv` (alle S3/S4-Gebäude der Stadt), `statistik.json`
+  (inkl. Vergleich mit der Hinweiskarte für das ganze Stadtgebiet)
+- nur den Web-Export neu erzeugen: `--nur-export`
+
+### 3a. Rechnen – Pilot (schneller Test)
 
 ```bash
 python -m pytest preprocessing/tests -q                       # Funktionstest (≈10 s)

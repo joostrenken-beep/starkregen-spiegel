@@ -1,5 +1,7 @@
-// Starkregen-Spiegel – Kartenanwendung (Meilenstein 2)
+// Starkregen-Spiegel – Kartenanwendung (Stadtgebiet, Kachel- und Paketdaten)
 import maplibregl from 'maplibre-gl';
+import { Protocol } from 'pmtiles';
+import { createCells, collect } from './cells.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './style.css';
 import { createSearch } from './search.js';
@@ -11,7 +13,7 @@ const BASEMAP =
 const AMPEL = { 0: '#3a9d5d', 1: '#f2b705', 2: '#d7301f' };
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const state = { meta: null, sid: null, view: 'gef', classes: new Set([1, 2, 3, 4]), flowCache: {}, buildings: new Map(), selected: null, v: '' };
+const state = { meta: null, sid: null, view: 'gef', classes: new Set([1, 2, 3, 4]), buildings: new Map(), selected: null, v: '', cells: null };
 export const RISK = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
 export const RISK_TXT = ['gering', 'mäßig', 'hoch', 'sehr hoch'];
 const GEF = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
@@ -27,14 +29,19 @@ function store(key, val) {
   return null;
 }
 
+const abs = (u) => new URL(u, window.location.href).href;
+const EMPTY = { type: 'FeatureCollection', features: [] };
+
 async function main() {
   const meta = await fetch(DATA + 'meta.json', { cache: 'no-store' }).then((r) => r.json());
   state.meta = meta;
   state.v = `?v=${meta.version || meta.stand}`;
   document.getElementById('stand').textContent = meta.stand;
   const scen = meta.szenarien;
-  const startIdx = Math.min(1, scen.length - 1);
-  state.sid = scen[startIdx].id;
+  state.sid = scen[Math.min(1, scen.length - 1)].id;
+
+  const protocol = new Protocol();
+  maplibregl.addProtocol('pmtiles', protocol.tile);
 
   const [w, s, e, n] = meta.gebiet.bounds;
   const map = new maplibregl.Map({
@@ -51,7 +58,7 @@ async function main() {
     },
     bounds: [[w, s], [e, n]],
     fitBoundsOptions: { padding: 20 },
-    maxBounds: [[w - 0.05, s - 0.03], [e + 0.05, n + 0.03]],
+    maxBounds: [[w - 0.08, s - 0.05], [e + 0.08, n + 0.05]],
     maxZoom: 20,
     attributionControl: { compact: true },
   });
@@ -60,30 +67,26 @@ async function main() {
   window.__map = map; // für Tests
 
   map.on('load', async () => {
-    const t = meta.dateien.tiefe[state.sid];
-    // Pilotgebiet-Umriss
-    map.addSource('gebiet', {
-      type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } },
-    });
+    map.addSource('gebiet', { type: 'geojson', data: abs(meta.dateien.umriss + state.v) });
     map.addLayer({ id: 'gebiet', type: 'line', source: 'gebiet',
       paint: { 'line-color': '#0b2f7a', 'line-width': 1.5, 'line-dasharray': [3, 2], 'line-opacity': 0.6 } });
 
-    map.addSource('senken', { type: 'geojson', data: DATA + 'senken.json' + state.v });
+    map.addSource('senken', { type: 'geojson', data: EMPTY });
     map.addLayer({ id: 'senken', type: 'fill', source: 'senken', layout: { visibility: 'none' },
       paint: { 'fill-color': ['interpolate', ['linear'], ['get', 'tmax'], 0.1, '#e9d8f5', 0.5, '#b07cd6', 1.5, '#5b2a86'],
         'fill-opacity': 0.55, 'fill-outline-color': '#5b2a86' } });
 
-    map.addSource('tiefe', { type: 'image', url: t.url + state.v, coordinates: t.coords });
-    map.addLayer({ id: 'tiefe', type: 'raster', source: 'tiefe',
-      paint: { 'raster-opacity': 0.9, 'raster-resampling': 'nearest', 'raster-fade-duration': 0 } });
+    // Wassertiefe: je Szenario eine Kachelpyramide (PMTiles), sichtbar ist nur das gewählte
+    for (const sc of scen) {
+      map.addSource(`tiefe_${sc.id}`, { type: 'raster', url: `pmtiles://${abs(meta.dateien.tiefe_pmtiles[sc.id] + state.v)}`, tileSize: 256 });
+      map.addLayer({ id: `tiefe_${sc.id}`, type: 'raster', source: `tiefe_${sc.id}`,
+        layout: { visibility: sc.id === state.sid ? 'visible' : 'none' },
+        paint: { 'raster-opacity': 0.9, 'raster-resampling': 'nearest', 'raster-fade-duration': 0 } });
+    }
 
-    const gb = await fetch(DATA + 'gebaeude.json' + state.v).then((r) => r.json());
-    gb.features.forEach((f) => state.buildings.set(f.properties.id, f));
-    map.addSource('gebaeude', { type: 'geojson', data: gb, promoteId: 'id' });
+    map.addSource('gebaeude', { type: 'geojson', data: EMPTY, promoteId: 'id' });
     map.addLayer({ id: 'gebaeude', type: 'fill', source: 'gebaeude', minzoom: 13,
       paint: { 'fill-color': ampelColor(state.sid), 'fill-opacity': ampelOpacity(state.sid) } });
-    // besonders schutzwürdige Gebäude (S4) in der Risiko-Ansicht hervorheben
     map.addLayer({ id: 'gebaeude-s4', type: 'line', source: 'gebaeude', minzoom: 13,
       filter: ['==', ['get', 's'], 4], layout: { visibility: 'none' },
       paint: { 'line-color': '#6a1b9a', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1.5, 18, 3.5] } });
@@ -92,7 +95,7 @@ async function main() {
     map.addLayer({ id: 'gebaeude-auswahl', type: 'line', source: 'gebaeude',
       paint: { 'line-color': '#111', 'line-width': ['case', ['boolean', ['feature-state', 'sel'], false], 3, 0] } });
 
-    map.addSource('fliesswege', { type: 'geojson', data: await flowData(state.sid) });
+    map.addSource('fliesswege', { type: 'geojson', data: EMPTY });
     const width = ['interpolate', ['linear'], ['ln', ['max', ['get', 'v'], 1]], 3.4, 1, 6.9, 2.5, 9.2, 5];
     map.addLayer({ id: 'fliesswege', type: 'line', source: 'fliesswege',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
@@ -102,13 +105,21 @@ async function main() {
       paint: { 'line-color': '#00c2ff', 'line-width': width, 'line-dasharray': [0, 4, 3] } });
     if (!reducedMotion) animateFlow(map);
 
+    // 1-km-Pakete nachladen
+    state.cells = createCells({ map, meta, version: state.v, onUpdate: (cells) => showCells(map, cells) });
+    const hint = document.getElementById('zoom-hint');
+    const updHint = () => { hint.hidden = map.getZoom() >= meta.zellen_minzoom - 0.5; };
+    map.on('zoomend', updHint);
+    updHint();
+
     setupLayerPanel(map);
     setupViewSwitch(map);
     setupScenario(map);
     setupClicks(map);
-    const adr = await fetch(DATA + 'adressen.json' + state.v).then((r) => r.json());
+    const adr = await fetch(abs(meta.dateien.adressen + state.v)).then((r) => r.json());
     createSearch({ map, addresses: adr, bounds: meta.gebiet.bounds, onSelect: (hit) => selectBuilding(map, hit.id, hit) });
     setupLocate(map);
+    state.cells.refresh(true);
     document.body.classList.add('ready');
   });
 
@@ -119,10 +130,17 @@ async function main() {
   }
 }
 
-// Einfärbung der Gebäude je Ansicht
-//  gef     : Wasser am Gebäude (Gefährdungsstufe 0–3)
-//  schaden : Schadenspotenzial S1–S4 (unabhängig vom Regen)
-//  risiko  : Gefährdung × Schadenspotenzial (Risikomatrix)
+function showCells(map, cells) {
+  const d = collect(cells, state.sid);
+  state.buildings = new Map(d.gebaeude.features.map((f) => [f.properties.id, f]));
+  map.getSource('gebaeude').setData(d.gebaeude);
+  map.getSource('fliesswege').setData(d.fliesswege);
+  map.getSource('senken').setData(d.senken);
+  if (state.selected != null && state.buildings.has(state.selected)) {
+    map.setFeatureState({ source: 'gebaeude', id: state.selected }, { sel: true });
+  }
+}
+
 function ampelColor(sid) {
   if (state.view === 'risiko') return ['match', ['get', `r_${sid}`], 3, RISK[3], 2, RISK[2], 1, RISK[1], RISK[0]];
   if (state.view === 'schaden') return ['match', ['get', 's'], 4, SK[4], 3, SK[3], 2, SK[2], SK[1]];
@@ -168,13 +186,6 @@ function setupViewSwitch(map) {
   applyBuildingStyle(map);
 }
 
-async function flowData(sid) {
-  if (!state.flowCache[sid]) {
-    state.flowCache[sid] = fetch(DATA + `fliesswege_${sid}.json` + state.v).then((r) => r.json());
-  }
-  return state.flowCache[sid];
-}
-
 // Animierte Strichelung in Fließrichtung (Linien sind in Fließrichtung digitalisiert)
 function animateFlow(map) {
   const seq = [[0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5], [2, 4, 1], [2.5, 4, 0.5], [3, 4, 0],
@@ -199,11 +210,14 @@ function setupLayerPanel(map) {
     panel.hidden = !panel.hidden;
     btn.setAttribute('aria-expanded', String(!panel.hidden));
   });
-  const groups = { tiefe: ['tiefe'], fliesswege: ['fliesswege', 'fliesswege-anim'], senken: ['senken'],
+  const groups = { tiefe: state.meta.szenarien.map((x) => `tiefe_${x.id}`), fliesswege: ['fliesswege', 'fliesswege-anim'], senken: ['senken'],
     gebaeude: ['gebaeude', 'gebaeude-linie', 'gebaeude-s4'] };
   panel.querySelectorAll('input[data-layer]').forEach((cb) => {
     cb.addEventListener('change', () => {
-      groups[cb.dataset.layer].forEach((id) => map.setLayoutProperty(id, 'visibility', cb.checked ? 'visible' : 'none'));
+      groups[cb.dataset.layer].forEach((id) => {
+        const on = cb.checked && (cb.dataset.layer !== 'tiefe' || id === `tiefe_${state.sid}`);
+        map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+      });
     });
   });
   renderLegend();
@@ -250,10 +264,10 @@ function setupScenario(map) {
     const sc = scen[+range.value];
     lbl.textContent = `${sc.mm} mm`;
     state.sid = sc.id;
-    const t = state.meta.dateien.tiefe[sc.id];
-    map.getSource('tiefe').updateImage({ url: t.url + state.v, coordinates: t.coords });
+    const tiefeAn = document.querySelector('input[data-layer=tiefe]').checked;
+    scen.forEach((x) => map.setLayoutProperty(`tiefe_${x.id}`, 'visibility', tiefeAn && x.id === sc.id ? 'visible' : 'none'));
     applyBuildingStyle(map);
-    map.getSource('fliesswege').setData(await flowData(sc.id));
+    map.getSource('fliesswege').setData(collect(state.cells.loadedData(), sc.id).fliesswege);
     if (state.selected != null) showSheet(renderBuilding(state.buildings.get(state.selected), state.meta, state.sid, state.view));
   });
 }
@@ -277,14 +291,19 @@ function clearSelection(map) {
   state.selected = null;
 }
 
-function selectBuilding(map, id, hit, fly = true) {
+async function selectBuilding(map, id, hit, fly = true) {
   clearSelection(map);
-  const f = state.buildings.get(id);
+  let f = state.buildings.get(id);
+  if (!f && hit?.cell) {
+    const d = await state.cells.load(hit.cell);
+    f = d?.g.features.find((x) => x.properties.id === id);
+  }
   if (!f) {
-    showSheet(`<h2>${hit ? hit.label : 'Adresse'}</h2><p>Für diese Adresse liegt kein Gebäude im Pilotgebiet vor.</p>`);
+    showSheet(`<h2>${hit ? hit.label : 'Adresse'}</h2><p>Für diese Adresse liegt kein berechnetes Gebäude vor.</p>`);
   } else {
     state.selected = id;
-    map.setFeatureState({ source: 'gebaeude', id }, { sel: true });
+    if (state.buildings.has(id)) map.setFeatureState({ source: 'gebaeude', id }, { sel: true });
+    else state.buildings.set(id, f);
     showSheet(renderBuilding(f, state.meta, state.sid, state.view));
   }
   if (fly && hit) {

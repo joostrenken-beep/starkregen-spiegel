@@ -1,0 +1,194 @@
+# Starkregen-Spiegel – Konfiguration Stadtgebiet Osterholz-Scharmbeck (147 km²)
+# Fachliche Parameter identisch mit config/pilot.yaml.
+# Alle Koordinaten in ETRS89 / UTM Zone 32N (EPSG:25832), Meter.
+
+gebiet:
+  name: Osterholz-Scharmbeck (Stadtgebiet)
+  crs: EPSG:25832
+  # Umriss der Stadt: wird bei Bedarf aus ALKIS erzeugt (Flurstücke der Gemeinde vereinigt)
+  gemeindeschluessel: "03356007"
+  umriss: data/raw/alkis/stadtgebiet_ohz.gpkg
+  # Rechnung in Blöcken: Kern block_km × block_km, Rand puffer_m (Zufluss, Senken am Rand)
+  block_km: 4
+  puffer_m: 1000
+
+dgm:
+  ordner: data/raw/dgm1          # GeoTIFF/COG-Kacheln (1 m) des LGLN; --fetch lädt sie automatisch
+  zellgroesse: 1.0
+
+gebaeude:
+  quelle: alkis                  # alkis (amtlich, Standard) | osm
+  einbrennhoehe: 5.0             # m über Gelände: Wasser fließt um Häuser herum
+  # Innenhöfe/Nischen, die nur durch Gebäude eingeschlossen sind, laufen ab dieser
+  # Höhe über die angrenzenden Gebäude ab (Tor, Durchgang, Türschwelle)
+  hof_schwelle_m: 0.30
+  ring_breite: 2                 # Zellen um das Gebäude für "Wasser an der Hauswand"
+  # Gewässer, die an Straße/Bahn unterbrochen sind, als verrohrt annehmen und öffnen
+  durchlaesse_ableiten: true
+
+# --- Durchlässe ----------------------------------------------------------
+# Wo ein Gewässer einen Damm (Straße/Bahn) quert, wird geprüft, wie tief man das DGM
+# durchstechen müsste. Bis zur Schwelle: offener Graben (Durchstich).
+# Darüber: Damm bleibt, Durchlass mit begrenzter Leistung (Q · Regendauer).
+durchlaesse:
+  aushub_schwelle_m: 0.5
+  # Standard 1,0 m³/s ≈ DN 800–1000 bei Vollfüllung. Bewusst vorsichtig gewählt:
+  # zu kleine Werte zeigen eher zu viel Wasser (sichere Seite).
+  q_standard_m3s: 1.0
+  # Bekannte Durchlässe: Lage (UTM, Dammkrone laut durchlaesse.geojson) + Leistung
+  einzelwerte: []
+  #  - {x: 485628, y: 5896426, radius_m: 30, q_m3s: 3.5}
+
+# --- Abflussbildung -------------------------------------------------------
+# Je Zelle: Versiegelungsgrad s (0..1). Abfluss =
+#   s     · max(0, P − Benetzung_versiegelt − Kanalabschlag)
+# + (1−s) · max(0, P − Anfangsverlust_unversiegelt − Infiltration · Dauer)
+# Dachflächen: wie versiegelt, Überschuss tritt am Gebäuderand aufs Gelände
+# (überlastete Fallrohre / Rückstau aus Grundleitungen).
+abfluss:
+  versiegelt:
+    benetzungsverlust_mm: 1.5
+  unversiegelt:
+    anfangsverlust_mm: 5.0
+    infiltration_mm_h: 10.0      # Sand der Geest höher, Moor/Niederung niedriger
+  kanal:
+    # Pauschale Kanalkapazität für an den Kanal angeschlossene versiegelte Flächen.
+    # 20 mm/h ≈ grob ein 2- bis 3-jährlicher Stundenregen in der Region –
+    # bitte mit KOSTRA-DWD-2020 (Rasterfeld Osterholz-Scharmbeck) prüfen.
+    abschlag_mm_h: 20.0
+  # Versiegelungsgrad aus ALKIS "tatsächliche Nutzung" (ohne Gebäude, die zählen
+  # separat als Dach). Erster passender Präfix gewinnt. Werte = Schätzungen für den
+  # nicht überbauten Teil der Fläche; bei Bedarf anpassen.
+  versiegelung_alkis:
+    - ["Strassenverkehr, Begleitfläche", 0.2]
+    - ["Strassenverkehr", 0.9]
+    - ["Platz", 0.9]
+    - ["Weg, Rad- und Fußweg", 0.8]
+    - ["Weg, Fußweg", 0.6]
+    - ["Weg", 0.4]                       # viele Wirtschaftswege unbefestigt
+    - ["Wohnbaufläche, Geschlossen", 0.6]
+    - ["Wohnbaufläche", 0.3]             # Einfahrten, Terrassen, Höfe
+    - ["Industrie- und Gewerbefläche, Kläranlage", 0.5]
+    - ["Industrie- und Gewerbefläche", 0.75]
+    - ["Fläche gemischter Nutzung", 0.4]
+    - ["Flächen besonderer funktionaler Prägung, Parken", 0.9]
+    - ["Flächen besonderer funktionaler Prägung", 0.5]
+    - ["Bahnverkehr, Gebäude- und Freifläche", 0.5]
+    - ["Bahnverkehr", 0.15]              # Schotter versickert
+    - ["Flugverkehr", 0.1]
+    - ["Schiffsverkehr", 0.6]
+    - ["Sport-, Freizeit- und Erholungsfläche, Sportanlage", 0.2]
+    - ["Sport-", 0.1]
+    - ["Friedhof", 0.1]
+  versiegelungsgrad:             # nur bei quelle: osm; Straßen/Parkplätze = 1
+    strasse: 1.0
+    parkplatz: 1.0
+    landuse_residential: 0.35    # Hofflächen, Einfahrten, Terrassen
+    landuse_commercial: 0.7
+    landuse_retail: 0.7
+    landuse_industrial: 0.7
+    sonstiges: 0.0
+  strassenbreite_m:              # Puffer um OSM-Straßenachsen
+    primary: 8
+    secondary: 7
+    tertiary: 6.5
+    residential: 5.5
+    unclassified: 5
+    living_street: 5
+    service: 3.5
+    pedestrian: 4
+    footway: 2
+    cycleway: 2
+    path: 1.5
+    track: 3
+  manning_n:
+    versiegelt: 0.015
+    unversiegelt: 0.05
+
+szenarien:                       # Blockregen
+  - {id: p30, niederschlag_mm: 30, dauer_h: 1}
+  - {id: p50, niederschlag_mm: 50, dauer_h: 1}
+  - {id: p80, niederschlag_mm: 80, dauer_h: 1}
+
+# Vergleichslauf mit den Annahmen der Hinweiskarte Starkregengefahren (BKG/NLWKN):
+# 100 mm in 1 h, ohne Kanal und ohne Versickerung. Nur zur Methodenprüfung.
+vergleich_hwk:
+  aktiv: true
+  szenario: {id: hwk100, niederschlag_mm: 100, dauer_h: 1, ohne_verluste: true}
+  wms_layer: ni_tiefe_extrem
+
+ampel:                           # max. Wassertiefe im Ring um das Gebäude
+  gelb_ab_m: 0.10
+  rot_ab_m: 0.30
+  # Die Tiefe muss auf mindestens dieser Fläche im 2-m-Ring erreicht werden.
+  # Kleinere, tiefe Stellen (Kellerabgang, Lichtschacht, DGM-Artefakt an der
+  # Hauswand) erzeugen einen eigenen Hinweis statt Rot.
+  min_flaeche_m2: 5
+
+ausgabe:
+  ordner: data/processed
+  web_ordner: web/public/data
+
+web:
+  fliessweg_min_m3: 30         # Fließwege erst ab diesem durchgeflossenen Volumen zeigen
+  minzoom: 11                  # Wassertiefe-Kacheln (PMTiles) von … bis
+  maxzoom: 16
+  zellen_minzoom: 14           # Gebäude, Fließwege, Senken ab dieser Zoomstufe nachladen
+
+# --- Risiko: Gefährdung × Schutzwürdigkeit -------------------------------
+# Schutzwürdigkeit S1–S4 in Anlehnung an DWA-A 118 (2006, Tab. 3, empfohlene
+# Überflutungshäufigkeiten) und DWA-M 119 (Schadenspotenzial). Nur öffentliche
+# Daten (ALKIS). Keller sind darin nicht enthalten -> Wohngebäude = S2.
+risiko:
+  schutzwuerdigkeit:
+    standard: 2
+    # ALKIS-Gebäudefunktion (gfk-Schlüssel); spätere Regeln überschreiben frühere
+    gebaeudefunktion:
+      - klasse: 1
+        text: "Garage/Nebengebäude/Landwirtschaft (vgl. A 118: ländlich, 1 in 10 a)"
+        gfk: [2460, 2461, 2463, 2464, 2700, 2720, 2721, 2723, 2724, 2726, 2727, 2728, 2729, 2740, 2211, 2212]
+      - klasse: 2
+        text: "Wohnen, Keller unbekannt (vgl. A 118: Wohngebiet, 1 in 20 a)"
+        gfk: [1000, 1010, 1020, 1210, 1220, 1310, 1311, 1312, 1313]
+      - klasse: 3
+        text: "Gewerbe, Handel, Mischnutzung, Verwaltung, Versammlung, Kultur, Versorgung (vgl. A 118: Zentrum/Gewerbe, 1 in 30 a)"
+        gfk: [1100, 1110, 1120, 1121, 1122, 1123, 1130, 1131, 1310, 2000, 2010, 2020, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100, 2110, 2120, 2130, 2131, 2140, 2310, 2320, 2400, 2410, 2420, 2430, 2462, 2500, 2501, 2510, 2520, 2600, 2610, 2620, 3000, 3010, 3011, 3012, 3013, 3014, 3015, 3016, 3017, 3018, 3019, 3020, 3036, 3037, 3038, 3040, 3041, 3042, 3043, 3044, 3045, 3046, 3047, 3048, 3100, 3200, 3210, 3211, 3220, 3221, 3222]
+      - klasse: 4
+        text: "Besonders schutzbedürftig: Kinder, Kranke, Pflegebedürftige, Einsatzkräfte (vgl. M 119: sehr hohes Schadenspotenzial)"
+        gfk: [3021, 3022, 3023, 3024, 3050, 3051, 3052, 3060, 3061, 3062, 3063, 3064, 3065, 3066, 3070, 3071, 3072, 3073, 3074, 3075]
+      - klasse: 4
+        text: "Unterirdische Anlage bzw. kritische Infrastruktur (vgl. A 118: unterirdische Anlagen 1 in 50 a; M 119: KRITIS)"
+        gfk: [2465, 2512, 2513, 2523, 2525]
+    # ALKIS 2000 "Gebäude für Wirtschaft oder Gewerbe" ist in NI oft ein Schuppen/Carport
+    nebengebaeude:
+      gfk: [2000, 2100, 1000]
+      max_flaeche_m2: 40
+      auf_wohnbauflaeche_max_m2: 150   # gfk 2000/2100 auf Wohnbaufläche bis zu dieser Größe = Nebengebäude
+      klasse: 1
+      text: "kleine Grundfläche"
+    offene_halle_klasse: 1
+    # Flurstücksnutzung hebt die Klasse (z. B. Pflegeheim mit gfk "Wohngebäude")
+    flurstuecksnutzung:
+      - klasse: 4
+        text: "besonders schutzbedürftige Nutzung (vgl. M 119: sehr hohes Schadenspotenzial)"
+        praefix: ["Flächen besonderer funktionaler Prägung, Gesundheit", "Flächen besonderer funktionaler Prägung, Soziales",
+                  "Flächen besonderer funktionaler Prägung, Bildung", "Flächen besonderer funktionaler Prägung, Sicherheit"]
+      - klasse: 3
+        text: "Versorgungsanlage/Kläranlage"
+        praefix: ["Industrie- und Gewerbefläche, Gebäude- und Freifläche Versorgungsanlage",
+                  "Industrie- und Gewerbefläche, Betriebsfläche Versorgungsanlage", "Industrie- und Gewerbefläche, Kläranlage",
+                  "Industrie- und Gewerbefläche, Umspannstation"]
+  # Gefährdungsstufen am Gebäude (Tiefe auf >= ampel.min_flaeche_m2 im Ring):
+  # 0 < 10 cm | 1 ab 10 cm | 2 ab 30 cm | 3 ab 50 cm
+  gefaehrdung_grenzen_m: [0.10, 0.30, 0.50]
+  # Risikomatrix (Zeilen Gefährdung 0–3, Spalten Schutzwürdigkeit S1–S4)
+  # Ergebnis 0 gering | 1 mäßig | 2 hoch | 3 sehr hoch
+  matrix:
+    - [0, 0, 0, 1]
+    - [0, 1, 1, 2]
+    - [1, 1, 2, 3]
+    - [1, 2, 3, 3]
+  # Schutzziel in Anlehnung an A 118: je höher die Schutzwürdigkeit, desto
+  # seltener (stärker) der Regen, bis zu dem das Gebäude trocken bleiben soll.
+  # Zuordnung Szenario <-> Wiederkehrzeit bitte mit KOSTRA-DWD-2020 festlegen.
+  schutzziel_szenario: {1: p30, 2: p30, 3: p50, 4: p80}

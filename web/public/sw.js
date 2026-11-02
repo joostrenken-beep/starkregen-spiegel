@@ -1,5 +1,5 @@
 // Service Worker: App offline nutzbar, Daten zwischengespeichert.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const APP = `app-${VERSION}`;
 const TILES = 'tiles-v1';
 const MAX_TILES = 1500;
@@ -32,6 +32,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (url.origin !== self.location.origin) return;            // z. B. Nominatim: nie cachen
+  if (req.headers.has('range')) return;                       // PMTiles-Teilabrufe direkt ans Netz
   if (req.mode === 'navigate') {                              // Seite: Netz zuerst
     e.respondWith(fetch(req).then((res) => {
       const copy = res.clone();
@@ -43,7 +44,7 @@ self.addEventListener('fetch', (e) => {
   // Daten und Programmcode: immer zuerst aus dem Netz (sonst passen alte Daten nicht
   // zum neuen Code), Zwischenspeicher nur als Rückfall ohne Netz
   e.respondWith(fetch(req).then((res) => {
-    if (res.ok) { const copy = res.clone(); caches.open(APP).then((c) => c.put(req, copy)); }
+    if (res.status === 200) { const copy = res.clone(); caches.open(APP).then((c) => c.put(req, copy)); }
     return res;
   }).catch(() => caches.match(req, { ignoreSearch: true })));
 });

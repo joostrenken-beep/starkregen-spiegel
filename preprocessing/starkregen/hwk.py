@@ -127,3 +127,14 @@ def plot(path, hill, own_depth, ref_cls, title, building=None):
     fig.suptitle(title, fontsize=14)
     fig.savefig(path, dpi=100)
     plt.close(fig)
+
+
+def counts(own_depth, ref_cls, mask, thresholds=(0.10, 0.30, 0.50)):
+    """Rohzählungen (Treffer, verpasst, Fehlalarm) je Schwelle – zum Aufsummieren über Blöcke."""
+    own_cls = to_class(own_depth)
+    out = {}
+    for t in thresholds:
+        a = (own_cls >= t) & mask
+        b = (ref_cls >= t) & mask
+        out[f"{int(t * 100)}cm"] = [int((a & b).sum()), int((~a & b).sum()), int((a & ~b).sum())]
+    return out
