@@ -45,11 +45,17 @@ def dgm_tiles(bbox, folder: Path, log=print):
     """Lädt je 1-km-Kachel den neuesten DGM1-Stand, der das Gebiet überlappt."""
     # STAC-Suche mit leicht verkleinerter Box, damit nur echte Nachbarn kommen
     b = [bbox[0] + 1, bbox[1] + 1, bbox[2] - 1, bbox[3] - 1]
-    r = requests.get(DGM_STAC, params={"collections": "dgm1", "bbox": ",".join(map(str, _bbox_wgs(b))),
-                                       "limit": 500}, timeout=60, headers=UA)
-    r.raise_for_status()
     newest = {}
-    for f in r.json()["features"]:
+    feats = []
+    url, params = DGM_STAC, {"collections": "dgm1", "bbox": ",".join(map(str, _bbox_wgs(b))), "limit": 100}
+    while url:                                   # alle Ergebnisseiten abrufen (Katalog blättert)
+        r = requests.get(url, params=params, timeout=60, headers=UA)
+        r.raise_for_status()
+        js = r.json()
+        feats += js["features"]
+        nxt = [lk for lk in js.get("links", []) if lk.get("rel") == "next"]
+        url, params = (nxt[0]["href"], None) if nxt and js["features"] else (None, None)
+    for f in feats:
         parts = f["id"].split("_")            # dgm1_32_486_5897_1_ni_2025
         e, n, year = int(parts[2]), int(parts[3]), int(parts[-1])
         if not (bbox[0] // 1000 <= e < -(-bbox[2] // 1000) and bbox[1] // 1000 <= n < -(-bbox[3] // 1000)):
