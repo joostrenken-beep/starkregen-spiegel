@@ -116,3 +116,49 @@ def manning_depth(volume_m3: np.ndarray, slope: np.ndarray, duration_s: float,
     q = volume_m3 / duration_s / cell_width
     s = np.maximum(slope, min_slope)
     return np.power(n_manning * q / np.sqrt(s), 0.6)
+
+
+def breach_corridors(dem, valid, corridor, max_len=1000, min_depth=0.05, iterations=6):
+    """Durchsticht Dämme nur innerhalb des Korridors (least-cost breaching).
+
+    Für jede Senke (Tiefe bei Vollfüllung > min_depth), die den Korridor berührt,
+    wird ab ihrem tiefsten Korridorpunkt der Weg mit dem geringsten Aushub zu
+    tieferem Gelände gesucht (max. max_len Zellen) und linear abgesenkt.
+    Wiederholt, weil sich nach einem Durchstich Senken neu ordnen.
+    """
+    from scipy import ndimage
+    z = np.ascontiguousarray(np.where(valid, dem, 0.0), dtype=np.float64)
+    valid = np.ascontiguousarray(valid)
+    corridor = np.ascontiguousarray(corridor & valid)
+    n = z.size
+    cost = np.full(n, np.inf)
+    steps = np.zeros(n, dtype=np.int64)
+    prev = np.full(n, -1, dtype=np.int64)
+    touched = np.empty(n, dtype=np.int64)
+    total = 0
+    for _ in range(iterations):
+        filled = hydro.fill_depressions(z, valid)
+        dep = (filled - z) > min_depth
+        lab, nlab = ndimage.label(dep, structure=np.ones((3, 3)))
+        hit = np.unique(lab[dep & corridor])
+        hit = hit[hit > 0]
+        if len(hit) == 0:
+            break
+        # Startpunkte: alle lokalen Tiefpunkte im Korridor innerhalb von Senken
+        zp = np.pad(z, 1, constant_values=np.inf)
+        lower = np.zeros(z.shape, bool)
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                lower |= zp[1 + dr:1 + dr + z.shape[0], 1 + dc:1 + dc + z.shape[1]] < z
+        starts = np.flatnonzero((corridor & (lab > 0) & ~lower).ravel())
+        starts = starts[np.argsort(z.ravel()[starts])[::-1]]   # von oben nach unten
+        changed = 0
+        for st in starts:
+            changed += hydro.breach_from(z, valid, corridor, lab, int(st),
+                                         max_len, cost, steps, prev, touched)
+        total += changed
+        if changed == 0:
+            break
+    return z, total

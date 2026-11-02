@@ -16,14 +16,17 @@ import time
 from pathlib import Path
 
 import numpy as np
+import geopandas as gpd
+import pandas as pd
 import rasterio
 import yaml
+from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from starkregen import dgm, fetch, hwk, landcover, osm, plausi, preview  # noqa: E402
-from starkregen.model import analyse_terrain, manning_depth, run_fill_spill  # noqa: E402
+from starkregen import alkis, dgm, hydro, fetch, hwk, landcover, osm, plausi, preview  # noqa: E402
+from starkregen.model import analyse_terrain, breach_corridors, manning_depth, run_fill_spill  # noqa: E402
 
 
 def log(msg, t0=[time.time()]):
@@ -85,7 +88,37 @@ def main():
     buildings = None
     layers = None
     n_culv = 0
-    if not args.ohne_osm:
+    quelle = cfg["gebaeude"].get("quelle", "alkis")
+    alkis_dir = ROOT / "data/raw/alkis"
+    if not args.ohne_osm and quelle == "alkis":
+        if alkis.find_gpkg(alkis_dir) is None:
+            if not args.fetch:
+                sys.exit("ALKIS-Geopackage fehlt in data/raw/alkis. Mit --fetch laden.")
+            log("Lade ALKIS (LGLN STAC) …")
+            fetch.alkis_landkreis(alkis_dir, log=log)
+        layers = alkis.load(alkis.find_gpkg(alkis_dir), bbox)
+        buildings = layers["buildings"]
+        log(f"ALKIS: {len(buildings)} Gebäude, {len(layers['areas'])} Nutzungsflächen, "
+            f"{len(layers['addresses'])} Adressen, {len(layers['flurstuecke'])} Flurstücke, "
+            f"{len(layers['culverts'])} Durchlässe")
+        bid = landcover.rasterize_buildings(buildings, transform, shape)
+        sealed, water = alkis.sealed_fraction(layers, transform, shape, cfg)
+        n_culv = len(layers["culverts"])
+        if cfg["gebaeude"].get("durchlaesse_ableiten", True):
+            inf = alkis.infer_culverts(layers)
+            if len(inf):
+                inf.to_crs("EPSG:4326").to_file(out / "durchlaesse_vermutet.geojson", driver="GeoJSON")
+            corr = alkis.corridor_mask(layers, inf, transform, shape)
+            dem_c, n_cells = breach_corridors(dem, valid, corr)
+            diff = dem - dem_c
+            write_tif(out / "durchstich_m.tif", np.where(diff > 0, diff, 0), transform, crs)
+            log(f"Durchstechen in Gewässer-/Durchlasskorridoren: {n_cells} Zellen abgesenkt, "
+                f"max. {np.nanmax(diff):.2f} m; vermutete Durchlässe: {len(inf)} "
+                f"(→ durchlaesse_vermutet.geojson, durchstich_m.tif)")
+            dem = np.where(valid, dem_c, dem)
+        log(f"Durchlässe geöffnet: {n_culv}; mittlerer Versiegelungsgrad (ohne Dächer) {sealed.mean():.0%}, "
+            f"Dachanteil {(bid > 0).mean():.0%}")
+    elif not args.ohne_osm:
         osm_path = ROOT / "data/raw/osm/osm_rechengebiet.json"
         if not osm_path.exists():
             if not args.fetch_osm:
@@ -103,6 +136,21 @@ def main():
     roof = bid > 0
     dem_b = np.where(roof, dem + cfg["gebaeude"]["einbrennhoehe"], dem)
     dem_b = np.where(valid, dem_b, 0.0)
+    # Innenhöfe: Wasser, das nur wegen umschließender Gebäude steht, fließt ab
+    # Schwelle (Tor, Durchgang, Türschwelle) über diese Gebäude ab
+    hs = cfg["gebaeude"].get("hof_schwelle_m")
+    if hs is not None and roof.any():
+        dem_low = np.where(valid, np.where(roof, dem + hs, dem), 0.0)
+        f_hi = hydro.fill_depressions(dem_b, valid)
+        f_lo = hydro.fill_depressions(dem_low, valid)
+        pocket = (~roof) & valid & ((f_hi - f_lo) > 0.05)
+        near = ndimage.binary_dilation(pocket, structure=np.ones((3, 3)), iterations=2) & roof
+        ids = np.unique(bid[near])
+        ids = ids[ids > 0]
+        lower = np.isin(bid, ids)
+        dem_b = np.where(lower, dem_low, dem_b)
+        log(f"Innenhöfe/Gebäudenischen: {pocket.sum():,} m² nur durch Gebäude eingeschlossen → "
+            f"{len(ids)} Gebäude ab {hs:.2f} m überströmbar")
 
     # 3) Geländeanalyse (szenariounabhängig) ------------------------------------
     log("Senkenhierarchie …")
@@ -145,17 +193,28 @@ def main():
                     "bilanzfehler_m3": res.runoff_total - res.stored - res.to_ocean,
                     "flaeche_tiefer_10cm_m2_anzeige": float((depth[rs, cs] > 0.10).sum() * cell * cell),
                     "flaeche_tiefer_30cm_m2_anzeige": float((depth[rs, cs] > 0.30).sum() * cell * cell)})
-        # Gebäude-Steckbrief (Vorstufe): max. Tiefe im Ring
+        # Gebäude-Steckbrief (Vorstufe): Tiefe im Ring um das Gebäude
         if buildings is not None and len(buildings):
             nb = len(buildings)
             m = ring_id > 0
+            amp = cfg["ampel"]
+            amin = float(amp.get("min_flaeche_m2", 5.0))
             mx = np.zeros(nb + 1)
             np.maximum.at(mx, ring_id[m], depth[m])
-            amp = cfg["ampel"]
-            col = f"{sc['id']}_max_m"
-            buildings[col] = mx[1:].round(3)
-            bil["gebaeude_gelb"] = int(((mx[1:] >= amp["gelb_ab_m"]) & (mx[1:] < amp["rot_ab_m"])).sum())
-            bil["gebaeude_rot"] = int((mx[1:] >= amp["rot_ab_m"]).sum())
+            a10 = np.bincount(ring_id[m], weights=(depth[m] >= amp["gelb_ab_m"]) * cell * cell, minlength=nb + 1)
+            a30 = np.bincount(ring_id[m], weights=(depth[m] >= amp["rot_ab_m"]) * cell * cell, minlength=nb + 1)
+            # Ampel: Tiefe muss auf mindestens amin m² des Rings erreicht werden
+            ampel = np.where(a30 >= amin, 2, np.where(a10 >= amin, 1, 0))
+            mulde = (mx >= amp["rot_ab_m"]) & (a30 < amin)
+            sid = sc["id"]
+            buildings[f"{sid}_max_m"] = mx[1:].round(3)
+            buildings[f"{sid}_flaeche_ab_gelb_m2"] = a10[1:].round(0)
+            buildings[f"{sid}_flaeche_ab_rot_m2"] = a30[1:].round(0)
+            buildings[f"{sid}_ampel"] = ampel[1:]
+            buildings[f"{sid}_kleine_mulde"] = mulde[1:]
+            bil["gebaeude_gelb"] = int((ampel[1:] == 1).sum())
+            bil["gebaeude_rot"] = int((ampel[1:] == 2).sum())
+            bil["gebaeude_hinweis_kleine_mulde"] = int(mulde[1:].sum())
         stats["szenarien"][sc["id"]] = bil
         if vh.get("aktiv") and sc["id"] == vh["szenario"]["id"]:
             log("Vergleich mit Hinweiskarte Starkregengefahren (WMS) …")
@@ -165,6 +224,30 @@ def main():
             m = ~roof[rs, cs]
             kz = hwk.compare(own, ref, m)
             kz["unbekannte_farbpixel"] = unk
+            # Ampel je Gebäude (gleiche Regel auf beide Karten, nur Kerngebiet)
+            if buildings is not None and len(buildings):
+                amp = cfg["ampel"]
+                amin = float(amp.get("min_flaeche_m2", 5.0))
+                rid = ring_id[rs, cs]
+                mm = rid > 0
+                nb = len(buildings)
+
+                def ampel_of(dd):
+                    a10 = np.bincount(rid[mm], weights=(dd[mm] >= amp["gelb_ab_m"]) * 1.0, minlength=nb + 1)
+                    a30 = np.bincount(rid[mm], weights=(dd[mm] >= amp["rot_ab_m"]) * 1.0, minlength=nb + 1)
+                    return np.where(a30 >= amin, 2, np.where(a10 >= amin, 1, 0))
+                inside = np.zeros(nb + 1, bool)
+                inside[np.unique(bid[rs, cs][bid[rs, cs] > 0])] = True
+                ao, ar = ampel_of(own)[inside], ampel_of(ref)[inside]
+                conf = np.zeros((3, 3), int)
+                np.add.at(conf, (ar, ao), 1)
+                kz["gebaeude_ampel"] = {
+                    "anzahl": int(inside.sum()),
+                    "gleich": float((ao == ar).mean()),
+                    "max_eine_stufe_abweichung": float((np.abs(ao - ar) <= 1).mean()),
+                    "matrix_zeilen_hwk_spalten_eigen_gruen_gelb_rot": conf.tolist()}
+                log(f"  Gebäude-Ampel: gleich {kz['gebaeude_ampel']['gleich']:.0%}, "
+                    f"Matrix (Zeilen HWK grün/gelb/rot, Spalten eigen): {conf.tolist()}")
             stats["vergleich_hwk"] = kz
             write_tif(out / "hwk_referenz_klassen.tif", ref, transform * transform.translation(cs.start, rs.start), crs)
             hwk.plot(out / "hwk_vergleich.png", preview.hillshade(dem_b[rs, cs]), own, ref,
@@ -179,9 +262,13 @@ def main():
             log("Plausibilitätsbericht …")
             plausi.report(out, dem_b[rs, cs], sinks[rs, cs], res.flow_volume[rs, cs], depth[rs, cs],
                           roof[rs, cs], transform * transform.translation(cs.start, rs.start), crs,
-                          {k: v.cx[extent[0]:extent[1], extent[2]:extent[3]] for k, v in layers.items()}
+                          {k: v.cx[extent[0]:extent[1], extent[2]:extent[3]] for k, v in layers.items()
+                           if isinstance(v, gpd.GeoDataFrame)}
                           if layers is not None else None,
                           scenario_label=f"({P} mm in {T} h)")
+        if "gebaeude_rot" in bil:
+            log(f"  Ampel Gebäude: rot {bil['gebaeude_rot']}, gelb {bil['gebaeude_gelb']}, "
+                f"Hinweis kleine Mulde am Haus {bil['gebaeude_hinweis_kleine_mulde']}")
         log(f"{sc['id']}: {P} mm/{T} h → Oberflächenabfluss {bil['oberflaechenabfluss_m3']:,.0f} m³, "
             f"in Senken {res.stored:,.0f} m³, aus Gebiet {res.to_ocean:,.0f} m³, "
             f"Bilanzfehler {bil['bilanzfehler_m3']:.2e} m³")
@@ -191,7 +278,8 @@ def main():
                            f"Starkregen-Spiegel – {P} mm in {T} h (Blockregen) – Orientierung, keine amtliche Karte")
 
     if buildings is not None and len(buildings):
-        cols = ["osm_id", "geometry"] + [c for c in buildings.columns if c.endswith("_max_m")]
+        cols = ["osm_id", "geometry"] + [c for c in ("building", "bez", "hnr") if c in buildings.columns]
+        cols = cols + [c for c in buildings.columns if c.split("_", 1)[0] in {x["id"] for x in runs}]
         buildings[cols].to_file(out / "gebaeude_ergebnis.gpkg", driver="GPKG")
     (out / "statistik.json").write_text(json.dumps(stats, indent=2, ensure_ascii=False))
     log(f"Fertig. Ergebnisse in {out}")

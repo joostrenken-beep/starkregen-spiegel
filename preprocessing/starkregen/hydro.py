@@ -584,3 +584,154 @@ def filled_dem(dem_flat, key, label, n_labels, zspill_leaf_root):
             if key[i] < z and z > out[i]:
                 out[i] = z
     return out
+
+
+# ---------------------------------------------------------------------------
+# 6. Eingeschränktes Durchstechen (least-cost breaching) entlang Gewässern
+# ---------------------------------------------------------------------------
+@njit(cache=True)
+def fill_depressions(dem, valid):
+    """Klassisches Priority-Flood-Füllen (Barnes 2014): alle Senken bis zum Überlauf."""
+    nr, nc = dem.shape
+    n = nr * nc
+    z = dem.ravel()
+    vflat = valid.ravel()
+    out = np.full(n, np.nan)
+    hk = np.empty(n, dtype=np.float64)
+    hc = np.empty(n, dtype=np.int64)
+    hi = np.empty(n, dtype=np.int64)
+    size = 0
+    counter = 0
+    for r in range(nr):
+        for c in range(nc):
+            i = r * nc + c
+            if not vflat[i]:
+                continue
+            edge = r == 0 or c == 0 or r == nr - 1 or c == nc - 1
+            if not edge:
+                for k in range(8):
+                    if not vflat[(r + DR[k]) * nc + (c + DC[k])]:
+                        edge = True
+                        break
+            if edge:
+                out[i] = z[i]
+                size = _heap_push(hk, hc, hi, size, z[i], counter, i)
+                counter += 1
+    while size > 0:
+        kc, i, size = _heap_pop(hk, hc, hi, size)
+        r = i // nc
+        c = i % nc
+        for k in range(8):
+            rr = r + DR[k]
+            cc = c + DC[k]
+            if rr < 0 or cc < 0 or rr >= nr or cc >= nc:
+                continue
+            j = rr * nc + cc
+            if not vflat[j] or not np.isnan(out[j]):
+                continue
+            out[j] = z[j] if z[j] > kc else kc
+            size = _heap_push(hk, hc, hi, size, out[j], counter, j)
+            counter += 1
+    return out.reshape(nr, nc)
+
+
+@njit(cache=True)
+def breach_from(z, valid, corridor, dep_label, start, max_len, cost, steps, prev, touched):
+    """Dijkstra im Korridor ab Senkentiefpunkt `start`: sucht den Weg mit dem
+    geringsten Aushub (Summe der Höhen über dem Startpunkt) zu einer Zelle, die
+    tiefer liegt und nicht zur selben Senke gehört (oder am Gebietsrand liegt).
+    Senkt den Weg linear zwischen Start- und Zielhöhe ab. Rückgabe: Anzahl Zellen."""
+    nr, nc = z.shape
+    zf = z.ravel()
+    vflat = valid.ravel()
+    cor = corridor.ravel()
+    lab = dep_label.ravel()
+    zs = zf[start]
+    my = lab[start]
+    hk = np.empty(64, dtype=np.float64)
+    hc = np.empty(64, dtype=np.int64)
+    hi = np.empty(64, dtype=np.int64)
+    size = 0
+    counter = 0
+    nt = 0
+    cost[start] = 0.0
+    steps[start] = 0
+    prev[start] = -1
+    touched[nt] = start
+    nt += 1
+    size = _heap_push(hk, hc, hi, size, 0.0, counter, start)
+    counter += 1
+    target = -1
+    while size > 0:
+        kc, i, size = _heap_pop(hk, hc, hi, size)
+        if kc > cost[i]:
+            continue
+        r = i // nc
+        c = i % nc
+        if i != start and zf[i] < zs - 1e-3 and lab[i] != my:
+            target = i
+            break
+        if r == 0 or c == 0 or r == nr - 1 or c == nc - 1:
+            if i != start and zf[i] <= zs:
+                target = i
+                break
+        if steps[i] >= max_len:
+            continue
+        found = False
+        for k in range(8):
+            rr = r + DR[k]
+            cc = c + DC[k]
+            if rr < 0 or cc < 0 or rr >= nr or cc >= nc:
+                continue
+            j = rr * nc + cc
+            if not vflat[j]:
+                continue
+            if not cor[j]:
+                # Auslauf in tieferes Gelände außerhalb des Korridors (z. B. nicht erfasster Graben)
+                if i != start and zf[j] < zs - 1e-3 and lab[j] != my:
+                    prev[j] = i
+                    steps[j] = steps[i] + 1
+                    if cost[j] == np.inf and nt < touched.shape[0]:
+                        cost[j] = kc
+                        touched[nt] = j
+                        nt += 1
+                    target = j
+                    found = True
+                    break
+                continue
+            nc_ = kc + max(0.0, zf[j] - zs) + 1e-3 * DIST[k]
+            if nc_ < cost[j]:
+                if cost[j] == np.inf:
+                    if nt >= touched.shape[0]:
+                        continue
+                    touched[nt] = j
+                    nt += 1
+                cost[j] = nc_
+                steps[j] = steps[i] + 1
+                prev[j] = i
+                if size >= hk.shape[0]:
+                    hk2 = np.empty(hk.shape[0] * 2, dtype=np.float64)
+                    hc2 = np.empty(hk.shape[0] * 2, dtype=np.int64)
+                    hi2 = np.empty(hk.shape[0] * 2, dtype=np.int64)
+                    hk2[:size] = hk[:size]
+                    hc2[:size] = hc[:size]
+                    hi2[:size] = hi[:size]
+                    hk, hc, hi = hk2, hc2, hi2
+                size = _heap_push(hk, hc, hi, size, nc_, counter, j)
+                counter += 1
+        if found:
+            break
+    m = 0
+    if target >= 0:
+        zt = zf[target]
+        L = steps[target]
+        p = prev[target]
+        while p >= 0 and p != start:
+            zi = zs + (zt - zs) * (steps[p] / max(L, 1))
+            if zf[p] > zi:
+                zf[p] = zi
+                m += 1
+            p = prev[p]
+    for t in range(nt):
+        cost[touched[t]] = np.inf
+    return m

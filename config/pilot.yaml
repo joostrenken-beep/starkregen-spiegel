@@ -16,9 +16,14 @@ dgm:
   zellgroesse: 1.0
 
 gebaeude:
-  quelle: osm                    # osm | alkis (später)
+  quelle: alkis                  # alkis (amtlich, Standard) | osm
   einbrennhoehe: 5.0             # m über Gelände: Wasser fließt um Häuser herum
+  # Innenhöfe/Nischen, die nur durch Gebäude eingeschlossen sind, laufen ab dieser
+  # Höhe über die angrenzenden Gebäude ab (Tor, Durchgang, Türschwelle)
+  hof_schwelle_m: 0.30
   ring_breite: 2                 # Zellen um das Gebäude für "Wasser an der Hauswand"
+  # Gewässer, die an Straße/Bahn unterbrochen sind, als verrohrt annehmen und öffnen
+  durchlaesse_ableiten: true
 
 # --- Abflussbildung -------------------------------------------------------
 # Je Zelle: Versiegelungsgrad s (0..1). Abfluss =
@@ -37,7 +42,31 @@ abfluss:
     # 20 mm/h ≈ grob ein 2- bis 3-jährlicher Stundenregen in der Region –
     # bitte mit KOSTRA-DWD-2020 (Rasterfeld Osterholz-Scharmbeck) prüfen.
     abschlag_mm_h: 20.0
-  versiegelungsgrad:             # aus OSM-Landnutzung; Straßen/Parkplätze = 1
+  # Versiegelungsgrad aus ALKIS "tatsächliche Nutzung" (ohne Gebäude, die zählen
+  # separat als Dach). Erster passender Präfix gewinnt. Werte = Schätzungen für den
+  # nicht überbauten Teil der Fläche; bei Bedarf anpassen.
+  versiegelung_alkis:
+    - ["Strassenverkehr, Begleitfläche", 0.2]
+    - ["Strassenverkehr", 0.9]
+    - ["Platz", 0.9]
+    - ["Weg, Rad- und Fußweg", 0.8]
+    - ["Weg, Fußweg", 0.6]
+    - ["Weg", 0.4]                       # viele Wirtschaftswege unbefestigt
+    - ["Wohnbaufläche, Geschlossen", 0.6]
+    - ["Wohnbaufläche", 0.3]             # Einfahrten, Terrassen, Höfe
+    - ["Industrie- und Gewerbefläche, Kläranlage", 0.5]
+    - ["Industrie- und Gewerbefläche", 0.75]
+    - ["Fläche gemischter Nutzung", 0.4]
+    - ["Flächen besonderer funktionaler Prägung, Parken", 0.9]
+    - ["Flächen besonderer funktionaler Prägung", 0.5]
+    - ["Bahnverkehr, Gebäude- und Freifläche", 0.5]
+    - ["Bahnverkehr", 0.15]              # Schotter versickert
+    - ["Flugverkehr", 0.1]
+    - ["Schiffsverkehr", 0.6]
+    - ["Sport-, Freizeit- und Erholungsfläche, Sportanlage", 0.2]
+    - ["Sport-", 0.1]
+    - ["Friedhof", 0.1]
+  versiegelungsgrad:             # nur bei quelle: osm; Straßen/Parkplätze = 1
     strasse: 1.0
     parkplatz: 1.0
     landuse_residential: 0.35    # Hofflächen, Einfahrten, Terrassen
@@ -77,6 +106,10 @@ vergleich_hwk:
 ampel:                           # max. Wassertiefe im Ring um das Gebäude
   gelb_ab_m: 0.10
   rot_ab_m: 0.30
+  # Die Tiefe muss auf mindestens dieser Fläche im 2-m-Ring erreicht werden.
+  # Kleinere, tiefe Stellen (Kellerabgang, Lichtschacht, DGM-Artefakt an der
+  # Hauswand) erzeugen einen eigenen Hinweis statt Rot.
+  min_flaeche_m2: 5
 
 ausgabe:
   ordner: data/processed

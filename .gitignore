@@ -10,3 +10,5 @@ data/raw/osm/*
 data/processed/
 node_modules/
 web/dist/
+data/raw/alkis/
+data/raw/lod1/

@@ -4,15 +4,27 @@ Vereinfachte topografische Gefährdungsanalyse (vgl. DWA-M 119), ergänzt um ein
 Näherung der Fließtiefe auf geneigten Flächen. **Kein hydrodynamisches 2D-Modell.**
 
 ## 1. Geländeaufbereitung
-- DGM1 (LGLN), 1 m.
-- **Gebäude einbrennen:** OSM-Grundrisse + 5 m → Wasser fließt um Häuser herum.
-- **Durchlässe öffnen:** OSM `waterway` + `tunnel=culvert` → Zellen entlang der
-  Leitung auf eine Linie zwischen Ein- und Auslaufsohle absenken. Sonst wirken
-  Straßendämme als Staumauern.
+- DGM1 (LGLN, Stand 2025), 1 m, 16 Kacheln (Kern 2 × 2 km + 1 km Puffer).
+- **Amtliche Grundlagen aus ALKIS** (LGLN Open Data, Landkreis-Geopackage):
+  Gebäude, tatsächliche Nutzung, Bauwerke (Durchlässe, Brücken), Flurstücke,
+  Adressen. OSM bleibt als Alternative (`gebaeude.quelle: osm`).
+- **Gebäude einbrennen:** + 5 m → Wasser fließt um Häuser herum. Aufgeständerte
+  und unterirdische Gebäude werden nicht eingebrannt.
+- **Innenhöfe:** Wasser, das nur wegen umschließender Gebäude stehen würde, fließt
+  ab 0,30 m über die angrenzenden Gebäude ab (Tor, Durchgang, Türschwelle).
+- **Durchlässe / Dämme (least-cost breaching, Lindsay 2016):** Dämme werden nur
+  innerhalb eines Korridors durchstochen: ALKIS-Fließgewässer (+2 m),
+  ALKIS-Durchlässe (+25 m) und vermutete Durchlässe (Gewässer an Straße/Bahn
+  unterbrochen und innerhalb 40 m fortgesetzt). Von jedem Tiefpunkt im Korridor
+  wird der Weg mit dem geringsten Aushub zu tieferem Gelände gesucht.
+  **Annahme: Durchlässe haben unbegrenzte Leistungsfähigkeit.** Ausgaben:
+  `durchstich_m.tif`, `durchlaesse_vermutet.geojson`.
 
 ## 2. Abflussbildung (Blockregen P in T)
-Je Zelle Versiegelungsgrad *s* (0…1) aus OSM: Straßen (Achse + Breite je Klasse)
-und Parkplätze = 1, Wohngebiet 0,35, Gewerbe/Industrie 0,7, sonst 0.
+Je Zelle Versiegelungsgrad *s* (0…1) aus der ALKIS-Nutzung (Tabelle in
+`config/pilot.yaml`, z. B. Straßenverkehr 0,9, Wohnbaufläche offen 0,3,
+geschlossen 0,6, Gewerbe 0,75, Bahn 0,15, Landwirtschaft/Wald 0). Gewässer:
+Regen fließt vollständig ab.
 
 ```
 Abfluss = s · max(0, P − Benetzung − Kanalabschlag·T)
@@ -47,7 +59,25 @@ Kontrolle: Oberflächenabfluss = in Senken + aus dem Gebiet (Fehler ≈ 1e-8 m³
   n = 0,015 (versiegelt) bzw. 0,05 (unversiegelt), S ≥ 0,5 %.
 - Max. Wassertiefe = max(Senkenfüllung, Fließtiefe).
 
-## 5. Grenzen (gehören in den Hinweistext der App)
+## 5. Gebäude-Ampel
+Ring 2 m um das Gebäude. Rot, wenn ≥ 30 cm, gelb, wenn ≥ 10 cm, jeweils auf
+**mindestens 5 m²** des Rings. Kleinere tiefe Stellen (Kellerabgang, Lichtschacht,
+DGM-Artefakt an der Wand) → eigener Hinweis „kleine Mulde am Haus“.
+
+## 6. Prüfung gegen die Hinweiskarte Starkregengefahren (BKG/NLWKN)
+Vergleichslauf mit deren Annahmen (100 mm/h, ohne Kanal/Versickerung), Stand
+erster Pilotlauf (Kerngebiet 2 × 2 km):
+- Senken, Unterführungen, Teiche und Niederungen stimmen in Lage und Größe überein.
+- Fehlalarme selten (≈ 10 % der als nass gezeigten Fläche).
+- Wir zeigen weniger flächige Überströmung (10–50 cm) entlang von Straßen und
+  Gewässern → bekannte Schwäche der statischen Methode.
+- **Größte Abweichung: Bachtal Südwest** (≈ E 485 600 / N 5 896 400). Die
+  Hinweiskarte staut den Bach vor Straßen-/Bahndamm bis 4 m auf (Damm im DGM
+  geschlossen); wir öffnen den Durchlass. Allein dort ≈ 460 Gebäude
+  unterschiedlich eingestuft. Entscheidend ist die tatsächliche Leistungsfähigkeit
+  der Durchlässe.
+
+## 7. Grenzen (gehören in den Hinweistext der App)
 - Statisch: keine Ganglinien, keine Fließzeiten, kein Rückstau, kein Impuls.
   Die Regendauer wirkt nur über Kanalabschlag und Infiltration.
 - Fließtiefe ist eine Näherung für Normalabfluss, kein 2D-Ergebnis.

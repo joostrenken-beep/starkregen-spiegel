@@ -13,7 +13,7 @@ Pilotgebiet: Osterholz-Scharmbeck, Innenstadt (2 × 2 km, gerechnet mit 1 km Puf
 | Meilenstein | Inhalt | Status |
 |---|---|---|
 | M0 | Gerüst, Konfiguration, Python-Umgebung | ✅ |
-| M1 | Vorverarbeitung (Senken, Füll-und-Überlauf, Fließwege, Kontrollbilder) | 🔧 Code fertig und getestet, wartet auf echte DGM-/OSM-Daten |
+| M1 | Vorverarbeitung (Senken, Füll-und-Überlauf, Fließwege, Kontrollbilder) | ✅ Pilotgebiet gerechnet (ALKIS + DGM1 2025), Vergleich mit Hinweiskarte |
 | M2 | Karte mit Adresssuche und Layern | offen |
 | M3 | Steckbrief, Szenarien, 3D | offen |
 
@@ -64,7 +64,7 @@ STAC-Katalog `dgm.stac.lgln.niedersachsen.de`) oder manuell, z. B.
 
 ```bash
 python -m pytest preprocessing/tests -q                       # Funktionstest (≈10 s)
-python preprocessing/run_pipeline.py --test --fetch --fetch-osm   # eine Kachel
+python preprocessing/run_pipeline.py --test --fetch      # eine Kachel (lädt DGM1 + ALKIS)
 python preprocessing/run_pipeline.py                           # ganzes Gebiet
 ```
 

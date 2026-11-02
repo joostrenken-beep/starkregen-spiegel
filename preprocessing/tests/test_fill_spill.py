@@ -100,3 +100,24 @@ def test_mass_balance_random_terrain():
         # gespeichertes Volumen = Integral der Wassertiefe
         assert r.lake_depth.sum() == pytest.approx(r.stored, rel=1e-6)
         assert (r.lake_depth <= h.sink_depth_full() + 1e-9).all()
+
+
+def test_carve_only_inside_corridor():
+    from starkregen.model import breach_corridors
+    dem = plane()
+    dem[:, 50:53] += 3.0                       # Damm quer zum Tal
+    dem[:3, 45:] += 10.0                       # Talflanken/Ränder oberhalb geschlossen
+    dem[-3:, 45:] += 10.0
+    dem[:, -3:] += 10.0
+    valid, ns = masks(dem)
+    corridor = np.zeros_like(valid)
+    corridor[48:51, :] = True                  # Bach-Korridor über den Damm
+    out, n = breach_corridors(dem, valid, corridor)
+    assert n > 0
+    # im Korridor durchstochen: Damm nicht mehr höher als die Oberwasser-Sohle
+    assert out[48:51, 51].min() <= dem[49, 53] + 1e-9
+    # außerhalb des Korridors bleibt der Damm unverändert
+    assert np.array_equal(out[10, 50:53], dem[10, 50:53])
+    # danach keine Senke mehr hinter dem Damm im Korridor
+    h = analyse_terrain(out, valid, ns)
+    assert h.sink_depth_full()[49, 60] < 1e-6
