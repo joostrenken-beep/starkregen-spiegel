@@ -12,3 +12,4 @@ node_modules/
 web/dist/
 data/raw/alkis/
 data/raw/lod1/
+web/public/data/
