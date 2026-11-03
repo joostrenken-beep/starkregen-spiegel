@@ -264,6 +264,24 @@ def main():
         log(f"Stadtumriss aus ALKIS erzeugt: {umriss}")
     outline = gpd.read_file(umriss).to_crs("EPSG:25832").geometry.union_all()
     blocks = blocks_for(outline, int(g["block_km"] * 1000), int(g["puffer_m"]))
+    # Offene Blöcke in kleinere Teilblöcke zerlegen (kürzere Rechenzeit je gespeichertem Stück)
+    teil = int(g.get("teilblock_km", 0) * 1000)
+    work0 = ROOT / cfg["ausgabe"]["ordner"] / "stadt" / "bloecke"
+    if teil and teil < g["block_km"] * 1000:
+        neu = []
+        for b in blocks:
+            if (work0 / b["id"] / "fertig.pkl").exists():
+                neu.append(b)
+                continue
+            x0, y0, x1, y1 = b["kern"]
+            for x in range(x0, x1, teil):
+                for y in range(y0, y1, teil):
+                    if box(x, y, x + teil, y + teil).intersects(outline):
+                        bf = int(g["puffer_m"])
+                        neu.append({"id": f"{x // 1000}_{y // 1000}_{teil // 1000}km",
+                                    "kern": [x, y, x + teil, y + teil],
+                                    "rechnung": [x - bf, y - bf, x + teil + bf, y + teil + bf]})
+        blocks = neu
     if args.max_bloecke:
         blocks = blocks[:args.max_bloecke]
     work = ROOT / cfg["ausgabe"]["ordner"] / "stadt"

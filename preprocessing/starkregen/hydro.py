@@ -884,3 +884,27 @@ def d8_accumulate(dem, valid, source, absorb):
         if bj >= 0 and not ab[i]:
             acc[bj] += acc[i]
     return acc.reshape(nr, nc), down
+
+
+@njit(cache=True)
+def breach_many(z, valid, corridor, dep_label, starts, max_len, cost, steps, prev, touched, max_cut):
+    """breach_from für viele Startpunkte in einer kompilierten Schleife.
+    Rückgabe: abgesenkte Zellen, Kandidaten für Durchlässe (Start, Ziel, Aushub, Krone)."""
+    changed = 0
+    n = starts.shape[0]
+    c_st = np.empty(n, dtype=np.int64)
+    c_tg = np.empty(n, dtype=np.int64)
+    c_cut = np.empty(n)
+    c_cr = np.empty(n, dtype=np.int64)
+    nc = 0
+    for t in range(n):
+        m, tgt, cut, crest = breach_from(z, valid, corridor, dep_label, starts[t], max_len,
+                                         cost, steps, prev, touched, max_cut)
+        changed += m
+        if m == 0 and tgt >= 0 and max_cut >= 0.0 and cut > max_cut and crest >= 0:
+            c_st[nc] = starts[t]
+            c_tg[nc] = tgt
+            c_cut[nc] = cut
+            c_cr[nc] = crest
+            nc += 1
+    return changed, c_st[:nc], c_tg[:nc], c_cut[:nc], c_cr[:nc]

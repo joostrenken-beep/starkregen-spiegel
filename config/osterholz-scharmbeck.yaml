@@ -11,6 +11,8 @@ gebiet:
   # Rechnung in Blöcken: Kern block_km × block_km, Rand puffer_m (Zufluss, Senken am Rand)
   block_km: 4
   puffer_m: 1000
+  # noch nicht gerechnete Blöcke in Teilblöcke dieser Größe zerlegen (kürzere Einzelläufe)
+  teilblock_km: 2
 
 dgm:
   ordner: data/raw/dgm1          # GeoTIFF/COG-Kacheln (1 m) des LGLN; --fetch lädt sie automatisch
