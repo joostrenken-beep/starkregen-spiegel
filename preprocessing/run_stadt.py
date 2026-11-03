@@ -180,7 +180,7 @@ def export(cfg, blocks, work, outline, args):
         j = gpd.sjoin(pts, gm, how="left", predicate="within")
         j = j[~j.index.duplicated()]
         for r_, gmk in zip(adr_rows, j["gmk__bez"].reindex(range(len(adr_rows)))):
-            r_.append(gmk if isinstance(gmk, str) else "")
+            r_.append(gmk if isinstance(gmk, str) else "außerhalb des Stadtgebiets")
     except Exception as ex:  # Ortsteil ist optional
         log(f"Hinweis: Ortsteile nicht ermittelt ({ex})")
     adr_rows.sort(key=lambda r_: (r_[0], web_export._hnr_key(r_[1])))

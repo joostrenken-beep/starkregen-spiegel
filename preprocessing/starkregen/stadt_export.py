@@ -42,7 +42,8 @@ def _palette_png(idx):
     return buf.getvalue()
 
 
-def class_pmtiles(blocks, crs, out_path: Path, bounds_ll, minzoom=11, maxzoom=16):
+def class_pmtiles(blocks, crs, out_path: Path, bounds_ll, minzoom=11, maxzoom=16,
+                  uebersicht_bis_zoom=13, uebersicht_ab_klasse=3):
     """blocks: Liste (klassen-array uint8, transform) im Ziel-KBS (UTM).
     Erzeugt eine PMTiles-Datei mit Palette-PNG-Kacheln; tiefere Zoomstufen per Maximum
     (dünne Wasserläufe bleiben sichtbar)."""
@@ -88,6 +89,9 @@ def class_pmtiles(blocks, crs, out_path: Path, bounds_ll, minzoom=11, maxzoom=16
         for j in range(nty):
             for i in range(ntx):
                 tile = level[j * 256:(j + 1) * 256, i * 256:(i + 1) * 256]
+                if z < uebersicht_bis_zoom + 1 and z < maxzoom:
+                    # Übersicht: nur tiefes Wasser, sonst wirkt alles überflutet
+                    tile = np.where(tile >= uebersicht_ab_klasse, tile, 0).astype(np.uint8)
                 if tile.any():
                     tiles[zxy_to_tileid(z, bx0 + i, by0 + j)] = _palette_png(np.ascontiguousarray(tile))
         if z > minzoom:
