@@ -108,3 +108,23 @@ dialog h2 { margin-top: 0; }
 .zoom-hint { position: absolute; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(70px + var(--safe-top));
   background: rgba(11, 47, 122, .9); color: #fff; font-size: 13px; padding: 6px 12px; border-radius: 16px; pointer-events: none; white-space: nowrap; }
 .jt { font-size: 12px; color: var(--muted); }
+
+/* 3D-Schalter */
+.fab-3d { right: 92px; min-width: 44px; }
+.fab-3d[aria-pressed="true"] { background: var(--blau); color: #fff; }
+
+/* Steckbrief-Abschnitte */
+details.sec { border-top: 1px solid var(--rand); padding: 6px 0; }
+details.sec > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; gap: 10px;
+  align-items: baseline; padding: 6px 0; font-weight: 600; font-size: 15px; }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary::before { content: "▸"; color: var(--blau); margin-right: 2px; transition: transform .15s; display: inline-block; }
+details.sec[open] > summary::before { transform: rotate(90deg); }
+details.sec > summary > span:first-of-type { flex: 1; }
+details.sec .sum { font-weight: 400; font-size: 13px; color: var(--muted); text-align: right; }
+details.sec p { font-size: 14px; margin: 4px 0 8px; }
+.tips { margin: 4px 0 8px; padding-left: 18px; font-size: 14px; }
+.tips li { margin: 0 0 6px; }
+.secondary { border: 1.5px solid var(--blau); background: var(--bg); color: var(--blau); border-radius: 10px; padding: 8px 12px;
+  font-size: 14px; cursor: pointer; width: 100%; margin: 2px 0 6px; }
+.secondary[aria-pressed="true"] { background: var(--blau); color: #fff; }

@@ -1,5 +1,5 @@
 // Service Worker: App offline nutzbar, Daten zwischengespeichert.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const APP = `app-${VERSION}`;
 const TILES = 'tiles-v1';
 const MAX_TILES = 1500;

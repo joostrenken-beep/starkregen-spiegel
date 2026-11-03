@@ -252,14 +252,9 @@ def export(cfg, blocks, work, outline, args):
     return stats
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default=str(ROOT / "config/osterholz-scharmbeck.yaml"))
-    ap.add_argument("--fetch", action="store_true")
-    ap.add_argument("--nur-export", action="store_true")
-    ap.add_argument("--max-bloecke", type=int, default=0, help="nur die ersten N Blöcke (Test)")
-    args = ap.parse_args()
-    cfg = yaml.safe_load(Path(args.config).read_text())
+def stadt_bloecke(cfg):
+    """Stadtumriss (ALKIS) und Blockliste – dieselbe Reihenfolge wie bei der Berechnung
+    (die Gebäude-IDs hängen davon ab)."""
     g = cfg["gebiet"]
     umriss = ROOT / g["umriss"]
     if not umriss.exists():
@@ -291,6 +286,19 @@ def main():
                                     "kern": [x, y, x + teil, y + teil],
                                     "rechnung": [x - bf, y - bf, x + teil + bf, y + teil + bf]})
         blocks = neu
+    return outline, blocks
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default=str(ROOT / "config/osterholz-scharmbeck.yaml"))
+    ap.add_argument("--fetch", action="store_true")
+    ap.add_argument("--nur-export", action="store_true")
+    ap.add_argument("--max-bloecke", type=int, default=0, help="nur die ersten N Blöcke (Test)")
+    args = ap.parse_args()
+    cfg = yaml.safe_load(Path(args.config).read_text())
+    g = cfg["gebiet"]
+    outline, blocks = stadt_bloecke(cfg)
     if args.max_bloecke:
         blocks = blocks[:args.max_bloecke]
     work = ROOT / cfg["ausgabe"]["ordner"] / "stadt"

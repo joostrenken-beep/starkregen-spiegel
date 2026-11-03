@@ -1,4 +1,4 @@
-# Methodik Starkregen-Spiegel (Stand M1)
+# Methodik Starkregen-Spiegel (Stand M3)
 
 Vereinfachte topografische Gefährdungsanalyse (vgl. DWA-M 119), ergänzt um eine
 Näherung der Fließtiefe auf geneigten Flächen. **Kein hydrodynamisches 2D-Modell.**
@@ -122,6 +122,29 @@ sortiert nach Risiko – Grundlage für Objektschutz-Gespräche.
 
 Alle Regeln, Matrix und Schutzziele: `config/pilot.yaml`, Abschnitt `risiko`.
 
+## 7a. Grundstücks-Steckbrief (M3)
+Baut auf den fertigen Blockergebnissen auf (`preprocessing/run_steckbrief.py`), die
+Hydraulik wird nicht neu gerechnet.
+
+- **Flurstück:** ALKIS-Flurstück, in dem der repräsentative Punkt des Gebäudes liegt.
+- **Wasser auf dem Grundstück:** aus den Tiefenrastern (1 m) je Szenario: größte Tiefe
+  und Flächen ≥ 10 cm bzw. ≥ 30 cm auf dem Flurstück ohne Gebäudeflächen. Flurstücke, die
+  über Blockgrenzen reichen, werden zusammengeführt.
+- **Einzugsgebiet („Woher kommt das Wasser?“):** DGM1 mit eingebrannten Gebäuden (+5 m),
+  Senken per Priority-Flood mit kleinem Gefälle (ε = 10⁻⁵ m) gefüllt – entspricht dem
+  Starkregen-Fall, in dem Mulden vollgelaufen sind und überlaufen. Fließrichtung D8; das
+  Einzugsgebiet eines Gebäudes sind alle Zellen, deren Fließweg durch Grundriss oder 2-m-Ring
+  führt (Breitensuche gegen die Fließrichtung). Angegeben werden Fläche und der Anteil
+  außerhalb des eigenen Flurstücks. Gerechnet je Block auf Kern + 1 km Puffer; reicht das
+  Gebiet bis an den Rand, wird „mindestens“ angezeigt. Kanalnetz und Durchlässe sind nicht
+  berücksichtigt (reine Geländebetrachtung).
+- **Gebäudehöhe (3D):** Median von DOM1 − DGM1 (LGLN) im Grundriss ohne 1-m-Rand;
+  Begrenzung auf 6 m (Nebengebäude S1) bzw. 30 m, da Bäume über kleinen Gebäuden das DOM
+  verfälschen. Fehlwerte: 3 m (S1) bzw. 7 m.
+- **Selbstschutz-Tipps:** nach Wasserstand am Haus im gewählten Szenario (Stufen wie
+  Gefährdung), ergänzt um Hinweise zu kleiner Mulde am Haus, hohem Fremdzufluss
+  (§ 37 WHG) und S4-Einrichtungen.
+
 ## 8. Grenzen (gehören in den Hinweistext der App)
 - Statisch: keine Ganglinien, keine Fließzeiten, kein Rückstau, kein Impuls.
   Die Regendauer wirkt nur über Kanalabschlag und Infiltration.
@@ -130,6 +153,7 @@ Alle Regeln, Matrix und Schutzziele: `config/pilot.yaml`, Abschnitt `risiko`.
 - Innenhöfe ohne Durchfahrt in OSM erscheinen als abflusslose Senken.
 - Kein Zufluss von außerhalb des Rechengebiets (1 km Puffer).
 - Kanalnetz nur als pauschaler Abschlag.
+- Einzugsgebiete rein topographisch (D8, Senken gefüllt); 3D-Gebäudehöhen genähert.
 
 ## Ausbaustufen (Architektur vorgesehen)
 - Hydrodynamisches 2D-Modell (local inertial, Bates et al. 2010) als Ersatz für

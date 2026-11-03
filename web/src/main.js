@@ -13,7 +13,8 @@ const BASEMAP =
 const AMPEL = { 0: '#3a9d5d', 1: '#f2b705', 2: '#d7301f' };
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const state = { meta: null, sid: null, view: 'gef', classes: new Set([1, 2, 3, 4]), buildings: new Map(), selected: null, v: '', cells: null };
+const state = { meta: null, sid: null, view: 'gef', classes: new Set([1, 2, 3, 4]), buildings: new Map(), selected: null, v: '', cells: null,
+  sb: new Map(), sbCur: undefined, einzug: false, is3d: false, map: null };
 export const RISK = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
 export const RISK_TXT = ['gering', 'mäßig', 'hoch', 'sehr hoch'];
 const GEF = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
@@ -65,6 +66,7 @@ async function main() {
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
   map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
   window.__map = map; // für Tests
+  state.map = map;
 
   map.on('load', async () => {
     map.addSource('gebiet', { type: 'geojson', data: abs(meta.dateien.umriss + state.v) });
@@ -92,6 +94,12 @@ async function main() {
     map.addLayer({ id: 'hwk', type: 'raster', source: 'hwk', layout: { visibility: 'none' },
       paint: { 'raster-opacity': 0.75 } });
 
+    // Einzugsgebiet des gewählten Gebäudes ("Woher kommt das Wasser?")
+    map.addSource('einzug', { type: 'geojson', data: EMPTY });
+    map.addLayer({ id: 'einzug', type: 'fill', source: 'einzug', paint: { 'fill-color': '#0a6fb5', 'fill-opacity': 0.18 } });
+    map.addLayer({ id: 'einzug-linie', type: 'line', source: 'einzug',
+      paint: { 'line-color': '#0a4f8a', 'line-width': 2, 'line-dasharray': [2, 1.5] } });
+
     map.addSource('gebaeude', { type: 'geojson', data: EMPTY, promoteId: 'id' });
     map.addLayer({ id: 'gebaeude', type: 'fill', source: 'gebaeude', minzoom: 13,
       paint: { 'fill-color': ampelColor(state.sid), 'fill-opacity': ampelOpacity(state.sid) } });
@@ -102,6 +110,9 @@ async function main() {
       paint: { 'line-color': '#444', 'line-width': 0.4, 'line-opacity': 0.6 } });
     map.addLayer({ id: 'gebaeude-auswahl', type: 'line', source: 'gebaeude',
       paint: { 'line-color': '#111', 'line-width': ['case', ['boolean', ['feature-state', 'sel'], false], 3, 0] } });
+    map.addLayer({ id: 'gebaeude-3d', type: 'fill-extrusion', source: 'gebaeude', minzoom: 13, layout: { visibility: 'none' },
+      paint: { 'fill-extrusion-color': extrusionColor(state.sid), 'fill-extrusion-height': ['coalesce', ['get', 'h'], 6],
+        'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.92 } });
 
     map.addSource('fliesswege', { type: 'geojson', data: EMPTY });
     const width = ['interpolate', ['linear'], ['ln', ['max', ['get', 'v'], 1]], 3.4, 1, 6.9, 2.5, 9.2, 5];
@@ -127,6 +138,7 @@ async function main() {
     const adr = await fetch(abs(meta.dateien.adressen + state.v)).then((r) => r.json());
     createSearch({ map, addresses: adr, bounds: meta.gebiet.bounds, onSelect: (hit) => selectBuilding(map, hit.id, hit) });
     setupLocate(map);
+    setup3d(map);
     state.cells.refresh(true);
     document.body.classList.add('ready');
   });
@@ -154,6 +166,9 @@ function ampelColor(sid) {
   if (state.view === 'schaden') return ['match', ['get', 's'], 4, SK[4], 3, SK[3], 2, SK[2], SK[1]];
   return ['match', ['get', `g_${sid}`], 3, GEF[3], 2, GEF[2], 1, GEF[1], GEF[0]];
 }
+function extrusionColor(sid) {
+  return ['case', ['boolean', ['feature-state', 'sel'], false], '#1b1f24', ampelColor(sid)];
+}
 function ampelOpacity(sid) {
   if (state.view === 'risiko') return ['match', ['get', `r_${sid}`], 3, 0.9, 2, 0.85, 1, 0.75, 0.3];
   if (state.view === 'schaden') return ['match', ['get', 's'], 1, 0.45, 0.85];
@@ -171,9 +186,13 @@ function applyBuildingStyle(map) {
   const f = classFilter();
   map.setFilter('gebaeude', f);
   map.setFilter('gebaeude-linie', f);
+  if (map.getLayer('gebaeude-3d')) {
+    map.setPaintProperty('gebaeude-3d', 'fill-extrusion-color', extrusionColor(state.sid));
+    map.setFilter('gebaeude-3d', f);
+  }
   const s4 = ['==', ['get', 's'], 4];
   map.setFilter('gebaeude-s4', state.classes.has(4) ? s4 : ['==', 1, 0]);
-  map.setLayoutProperty('gebaeude-s4', 'visibility', state.view === 'schaden' ? 'none' : 'visible');
+  updateBuildingVisibility(map);
   renderLegend();
 }
 
@@ -182,7 +201,7 @@ function setupViewSwitch(map) {
     state.view = b.dataset.view;
     document.querySelectorAll('.view-switch button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
     applyBuildingStyle(map);
-    if (state.selected != null) showSheet(renderBuilding(state.buildings.get(state.selected), state.meta, state.sid, state.view));
+    renderSelected();
   }));
   document.querySelectorAll('.class-filter button').forEach((b) => b.addEventListener('click', () => {
     const k = +b.dataset.s;
@@ -223,6 +242,7 @@ function setupLayerPanel(map) {
   panel.querySelectorAll('input[data-layer]').forEach((cb) => {
     cb.addEventListener('change', () => {
       if (cb.dataset.layer === 'hwk') document.getElementById('hwk-hinweis').hidden = !cb.checked;
+      if (cb.dataset.layer === 'gebaeude') { updateBuildingVisibility(map); return; }
       groups[cb.dataset.layer].forEach((id) => {
         const on = cb.checked && (cb.dataset.layer !== 'tiefe' || id === `tiefe_${state.sid}`);
         map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
@@ -280,14 +300,14 @@ function setupScenario(map) {
     scen.forEach((x) => map.setLayoutProperty(`tiefe_${x.id}`, 'visibility', tiefeAn && x.id === sc.id ? 'visible' : 'none'));
     applyBuildingStyle(map);
     map.getSource('fliesswege').setData(collect(state.cells.loadedData(), sc.id).fliesswege);
-    if (state.selected != null) showSheet(renderBuilding(state.buildings.get(state.selected), state.meta, state.sid, state.view));
+    renderSelected();
   });
 }
 
 function setupClicks(map) {
   map.on('click', (e) => {
-    const hits = map.queryRenderedFeatures(e.point, { layers: ['gebaeude', 'senken'].filter((l) => map.getLayer(l)) });
-    const b = hits.find((h) => h.layer.id === 'gebaeude');
+    const hits = map.queryRenderedFeatures(e.point, { layers: ['gebaeude', 'gebaeude-3d', 'senken'].filter((l) => map.getLayer(l)) });
+    const b = hits.find((h) => h.layer.id.startsWith('gebaeude'));
     if (b) return selectBuilding(map, b.id, null, false);
     const sk = hits.find((h) => h.layer.id === 'senken');
     if (sk) return showSheet(renderSink(sk.properties, state.meta, state.sid));
@@ -295,12 +315,17 @@ function setupClicks(map) {
     hideSheet();
   });
   map.on('mouseenter', 'gebaeude', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseenter', 'gebaeude-3d', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'gebaeude-3d', () => { map.getCanvas().style.cursor = ''; });
   map.on('mouseleave', 'gebaeude', () => { map.getCanvas().style.cursor = ''; });
 }
 
 function clearSelection(map) {
   if (state.selected != null) map.setFeatureState({ source: 'gebaeude', id: state.selected }, { sel: false });
   state.selected = null;
+  state.einzug = false;
+  state.sbCur = undefined;
+  map.getSource('einzug')?.setData(EMPTY);
 }
 
 async function selectBuilding(map, id, hit, fly = true) {
@@ -316,7 +341,13 @@ async function selectBuilding(map, id, hit, fly = true) {
     state.selected = id;
     if (state.buildings.has(id)) map.setFeatureState({ source: 'gebaeude', id }, { sel: true });
     else state.buildings.set(id, f);
-    showSheet(renderBuilding(f, state.meta, state.sid, state.view));
+    state.sbCur = undefined;
+    renderSelected();
+    loadSteckbrief(f).then((rec) => {
+      if (state.selected !== id) return;
+      state.sbCur = rec;
+      renderSelected();
+    });
   }
   if (fly && hit) {
     // Karte so verschieben, dass das Gebäude nicht unter dem Info-Fenster liegt
@@ -330,10 +361,96 @@ async function selectBuilding(map, id, hit, fly = true) {
 
 function setupSheet(map) {
   document.querySelector('.sheet-close').addEventListener('click', () => { hideSheet(); clearSelection(map); });
+  document.getElementById('sheet-body').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-action=einzug]')) return;
+    state.einzug = !state.einzug;
+    showEinzug(map);
+    renderSelected();
+  });
 }
+
+// Steckbrief-Pakete (je 1-km-Zelle) erst bei Bedarf laden
+function loadSteckbrief(f) {
+  const key = f.properties.c;
+  const base = state.meta.dateien.steckbrief_url;
+  if (!key || !base) return Promise.resolve(null);
+  if (!state.sb.has(key)) {
+    state.sb.set(key, fetch(abs(`${base}${key}.json${state.v}`)).then((r) => (r.ok ? r.json() : {}))
+      .catch(() => { state.sb.delete(key); return {}; }));
+  }
+  return state.sb.get(key).then((d) => d[String(f.properties.id)] || null);
+}
+
+function renderSelected() {
+  if (state.selected == null) return;
+  const f = state.buildings.get(state.selected);
+  if (!f) return;
+  showSheet(renderBuilding(f, state.meta, state.sid, state.view, { sb: state.sbCur, einzug: state.einzug }));
+}
+
+function showEinzug(map) {
+  const g = state.sbCur?.e?.g;
+  if (!state.einzug || !g) { map.getSource('einzug').setData(EMPTY); return; }
+  map.getSource('einzug').setData({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: g } });
+  let [w, s, e, n] = [180, 90, -180, -90];
+  for (const [x, y] of g[0]) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+  const sheet = document.getElementById('sheet');
+  const wide = window.innerWidth >= 760;
+  const padding = wide ? { right: sheet.offsetWidth + 40, top: 40, bottom: 40, left: 40 }
+    : { bottom: sheet.offsetHeight + 20, top: 80, left: 30, right: 30 };
+  map.fitBounds([[w, s], [e, n]], { padding, maxZoom: 18, duration: reducedMotion ? 0 : 800 });
+}
+
 function showSheet(html) {
-  document.getElementById('sheet-body').innerHTML = html;
-  document.getElementById('sheet').hidden = false;
+  const body = document.getElementById('sheet-body');
+  const sheet = document.getElementById('sheet');
+  // geöffnete Abschnitte und Scrollposition beim Neuzeichnen behalten
+  const open = new Map([...body.querySelectorAll('details.sec')].map((d) => [d.querySelector('summary span')?.textContent, d.open]));
+  const top = sheet.scrollTop;
+  body.innerHTML = html;
+  body.querySelectorAll('details.sec').forEach((d) => {
+    const k = d.querySelector('summary span')?.textContent;
+    if (open.has(k)) d.open = open.get(k);
+  });
+  sheet.hidden = false;
+  sheet.scrollTop = top;
+}
+
+// ---------------------------------------------------------------------------
+// 3D-Ansicht: Gelände (DGM1) + Gebäude als Blöcke mit Höhe aus DOM1 − DGM1
+function updateBuildingVisibility(map) {
+  const on = document.querySelector('input[data-layer=gebaeude]')?.checked ?? true;
+  const vis = (id, v) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none');
+  vis('gebaeude', on && !state.is3d);
+  vis('gebaeude-linie', on && !state.is3d);
+  vis('gebaeude-auswahl', !state.is3d);
+  vis('gebaeude-s4', on && !state.is3d && state.view !== 'schaden');
+  vis('gebaeude-3d', on && state.is3d);
+}
+
+function setup3d(map) {
+  const btn = document.getElementById('btn-3d');
+  const url = state.meta.dateien.gelaende_pmtiles;
+  btn.addEventListener('click', () => {
+    state.is3d = !state.is3d;
+    btn.setAttribute('aria-pressed', String(state.is3d));
+    if (state.is3d && url && !map.getSource('gelaende')) {
+      const src = { type: 'raster-dem', url: `pmtiles://${abs(url + state.v)}`, encoding: 'terrarium', tileSize: 256 };
+      map.addSource('gelaende', src);
+      map.addSource('gelaende-schatten', { ...src });
+      const first = map.getStyle().layers.find((l) => l.id.startsWith('tiefe_'))?.id;
+      map.addLayer({ id: 'schummerung', type: 'hillshade', source: 'gelaende-schatten', layout: { visibility: 'none' },
+        paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#4a5560', 'hillshade-highlight-color': '#ffffff' } }, first);
+    }
+    if (map.getSource('gelaende')) {
+      map.setTerrain(state.is3d ? { source: 'gelaende', exaggeration: 1.5 } : null);
+      map.setLayoutProperty('schummerung', 'visibility', state.is3d ? 'visible' : 'none');
+    }
+    updateBuildingVisibility(map);
+    const dur = reducedMotion ? 0 : 900;
+    if (state.is3d) map.easeTo({ pitch: 55, bearing: map.getBearing() || -20, zoom: Math.max(map.getZoom(), 15.5), duration: dur });
+    else map.easeTo({ pitch: 0, bearing: 0, duration: dur });
+  });
 }
 function hideSheet() { document.getElementById('sheet').hidden = true; }
 

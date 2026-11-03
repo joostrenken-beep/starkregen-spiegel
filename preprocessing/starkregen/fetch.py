@@ -1,6 +1,7 @@
 """Download der Open-Data-Grundlagen des LGLN über die STAC-Kataloge.
 
 DGM1:  https://dgm.stac.lgln.niedersachsen.de   (Kacheln 1 × 1 km, COG)
+DOM1:  https://dom.stac.lgln.niedersachsen.de   (Oberflächenmodell, gleiche Kacheln; für Gebäudehöhen)
 ALKIS: https://alkis.stac.lgln.niedersachsen.de (Landkreis-Geopackage mit Gebäuden,
        Flurstücken und tatsächlicher Nutzung)
 Die Dateien selbst liegen auf *.s3.eu-de.cloud-object-storage.appdomain.cloud.
@@ -14,6 +15,7 @@ import requests
 from pyproj import Transformer
 
 DGM_STAC = "https://dgm.stac.lgln.niedersachsen.de/search"
+DOM_STAC = "https://dom.stac.lgln.niedersachsen.de/search"
 ALKIS_STAC = "https://alkis.stac.lgln.niedersachsen.de/search"
 UA = {"User-Agent": "starkregen-spiegel/0.1 (Pilotprojekt Osterholz-Scharmbeck)"}
 
@@ -43,11 +45,20 @@ def _download(url, path: Path, log=print):
 
 def dgm_tiles(bbox, folder: Path, log=print):
     """Lädt je 1-km-Kachel den neuesten DGM1-Stand, der das Gebiet überlappt."""
+    return _stac_tiles(DGM_STAC, "dgm1", "dgm1-tif", bbox, folder, log)
+
+
+def dom_tiles(bbox, folder: Path, log=print):
+    """Wie dgm_tiles, aber Oberflächenmodell DOM1 (Dächer, Bäume)."""
+    return _stac_tiles(DOM_STAC, "dom1", "dom1-tif", bbox, folder, log)
+
+
+def _stac_tiles(stac, collection, asset, bbox, folder: Path, log=print):
     # STAC-Suche mit leicht verkleinerter Box, damit nur echte Nachbarn kommen
     b = [bbox[0] + 1, bbox[1] + 1, bbox[2] - 1, bbox[3] - 1]
     newest = {}
     feats = []
-    url, params = DGM_STAC, {"collections": "dgm1", "bbox": ",".join(map(str, _bbox_wgs(b))), "limit": 100}
+    url, params = stac, {"collections": collection, "bbox": ",".join(map(str, _bbox_wgs(b))), "limit": 100}
     while url:                                   # alle Ergebnisseiten abrufen (Katalog blättert)
         r = requests.get(url, params=params, timeout=60, headers=UA)
         r.raise_for_status()
@@ -61,8 +72,8 @@ def dgm_tiles(bbox, folder: Path, log=print):
         if not (bbox[0] // 1000 <= e < -(-bbox[2] // 1000) and bbox[1] // 1000 <= n < -(-bbox[3] // 1000)):
             continue
         if (e, n) not in newest or year > newest[(e, n)][0]:
-            newest[(e, n)] = (year, f["assets"]["dgm1-tif"]["href"])
-    log(f"DGM1: {len(newest)} Kacheln")
+            newest[(e, n)] = (year, f["assets"][asset]["href"])
+    log(f"{collection.upper()}: {len(newest)} Kacheln")
     return [_download(url, Path(folder) / Path(url).name, log) for _, url in sorted(newest.values())]
 
 

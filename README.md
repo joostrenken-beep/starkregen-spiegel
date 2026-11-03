@@ -17,7 +17,8 @@ schnelles Testgebiet erhalten (`config/pilot.yaml`).
 | M0 | Gerüst, Konfiguration, Python-Umgebung | ✅ |
 | M1 | Vorverarbeitung (Senken, Füll-und-Überlauf, Fließwege, Kontrollbilder) | ✅ Pilotgebiet gerechnet (ALKIS + DGM1 2025), Vergleich mit Hinweiskarte |
 | M2 | Karte mit Adresssuche und Layern (PWA) | ✅ |
-| M3 | Steckbrief, Szenarien, 3D | offen |
+| M3 | Grundstücks-Steckbrief, Einzugsgebiet je Gebäude, Selbstschutz-Tipps, 3D-Ansicht | ✅ |
+| M4 | KOSTRA-Kanalabschlag, Versickerung nach Boden, Hinweiskarte als Vergleich, Durchlass-Prüfliste | ✅ |
 
 ## Ordnerstruktur
 
@@ -77,6 +78,19 @@ python preprocessing/run_stadt.py --config config/osterholz-scharmbeck.yaml --fe
   `risiko_objektliste.csv` (alle S3/S4-Gebäude der Stadt), `statistik.json`
   (inkl. Vergleich mit der Hinweiskarte für das ganze Stadtgebiet)
 - nur den Web-Export neu erzeugen: `--nur-export`
+
+Danach den Steckbrief ergänzen (Flurstück, Wasser auf dem Grundstück, Einzugsgebiete,
+Gebäudehöhen aus DOM1, Geländekacheln für 3D):
+
+```bash
+python preprocessing/run_steckbrief.py --config config/osterholz-scharmbeck.yaml
+```
+
+- lädt die DOM1-Kacheln selbst (`data/raw/dom1/`), fertige Blöcke (`m3.pkl`) werden übersprungen
+- **nach jedem neuen `run_stadt.py`-Export erneut aufrufen** (mit `--nur-export` genügt,
+  solange sich die Blockberechnung nicht geändert hat; sonst vorher die `m3.pkl` löschen)
+- Veröffentlichen: `bash preprocessing/daten_veroeffentlichen.sh`, dann Workflow
+  „Web-App veröffentlichen“ starten
 
 ### 3a. Rechnen – Pilot (schneller Test)
 

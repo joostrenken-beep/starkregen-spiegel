@@ -1,4 +1,5 @@
-// Kurzinfo zu Gebäude bzw. Senke (Vorstufe des Grundstücks-Steckbriefs aus Meilenstein 3)
+// Steckbrief zu Gebäude bzw. Senke
+import { parcelSection, catchmentSection, tipsSection } from './steckbrief.js';
 
 const AMPEL_TXT = [
   { cls: 'gruen', kurz: 'gering', titel: 'Geringe Gefährdung', text: 'Am Gebäude sammelt sich nach der Berechnung kaum Wasser (unter 10 cm).' },
@@ -22,7 +23,7 @@ export function parse(v) {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export function renderBuilding(f, meta, sid, view = 'gef') {
+export function renderBuilding(f, meta, sid, view = 'gef', opt = {}) {
   const p = f.properties;
   const cur = parse(p[sid]);
   const a = AMPEL_TXT[cur.ampel];
@@ -62,6 +63,11 @@ export function renderBuilding(f, meta, sid, view = 'gef') {
     ${cur.mulde ? '<p class="hint">⚠ Direkt am Haus gibt es eine <strong>kleine, tiefe Mulde</strong> (z. B. Kellerabgang, Lichtschacht, abgesenkte Einfahrt). Dort kann sich Wasser sammeln und ins Haus laufen.</p>' : ''}
     ${schutz}
     <table class="scen"><thead><tr><th>Regen</th><th>Wasser am Haus</th>${hasRisk ? '<th>Risiko</th>' : ''}<th>max. am Haus</th></tr></thead><tbody>${rows}</tbody></table>
+    ${opt.sb === undefined ? '<p class="small">Steckbrief wird geladen …</p>' : ''}
+    ${catchmentSection(opt.sb, !!opt.einzug)}
+    ${parcelSection(opt.sb, meta, sid)}
+    ${tipsSection(p, cur, opt.sb, sc)}
+    ${p.h ? `<p class="small">Gebäudehöhe ca. ${String(p.h).replace('.', ',')} m (aus DOM1 − DGM1).</p>` : ''}
     <p class="small">„max. am Haus“ = höchster Wert im 2-m-Streifen rund um das Gebäude. Schadenspotenzial aus öffentlichen
       ALKIS-Daten (Gebäudefunktion, Flächennutzung); Keller sind darin nicht enthalten. Orientierungshilfe, keine amtliche Auskunft.</p>`;
 }

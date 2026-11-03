@@ -919,3 +919,131 @@ def breach_many(z, valid, corridor, dep_label, starts, max_len, cost, steps, pre
             c_cr[nc] = crest
             nc += 1
     return changed, c_st[:nc], c_tg[:nc], c_cut[:nc], c_cr[:nc]
+
+
+# ---------------------------------------------------------------------------
+# 7. Einzugsgebiete ("Woher kommt das Wasser?")
+# ---------------------------------------------------------------------------
+@njit(cache=True)
+def fill_epsilon(dem, valid, eps=1e-5):
+    """Priority-Flood mit kleinem Gefälle auf Flächen (Barnes 2014, Variante +ε):
+    jede Zelle liegt danach höher als die Zelle, über die sie erreicht wurde.
+    So hat jede Zelle einen tieferen Nachbarn – nötig für eindeutige Fließrichtungen."""
+    nr, nc = dem.shape
+    n = nr * nc
+    z = dem.ravel()
+    vflat = valid.ravel()
+    out = np.full(n, np.nan)
+    hk = np.empty(n, dtype=np.float64)
+    hc = np.empty(n, dtype=np.int64)
+    hi = np.empty(n, dtype=np.int64)
+    size = 0
+    counter = 0
+    for r in range(nr):
+        for c in range(nc):
+            i = r * nc + c
+            if not vflat[i]:
+                continue
+            edge = r == 0 or c == 0 or r == nr - 1 or c == nc - 1
+            if not edge:
+                for k in range(8):
+                    if not vflat[(r + DR[k]) * nc + (c + DC[k])]:
+                        edge = True
+                        break
+            if edge:
+                out[i] = z[i]
+                size = _heap_push(hk, hc, hi, size, z[i], counter, i)
+                counter += 1
+    while size > 0:
+        kc, i, size = _heap_pop(hk, hc, hi, size)
+        r = i // nc
+        c = i % nc
+        for k in range(8):
+            rr = r + DR[k]
+            cc = c + DC[k]
+            if rr < 0 or cc < 0 or rr >= nr or cc >= nc:
+                continue
+            j = rr * nc + cc
+            if not vflat[j] or not np.isnan(out[j]):
+                continue
+            out[j] = z[j] if z[j] > kc + eps else kc + eps
+            size = _heap_push(hk, hc, hi, size, out[j], counter, j)
+            counter += 1
+    return out.reshape(nr, nc)
+
+
+@njit(cache=True)
+def d8_down(z, valid):
+    """Index der Unterliegerzelle (steilster Abstieg), -1 = Rand/keine."""
+    nr, nc = z.shape
+    zf = z.ravel()
+    v = valid.ravel()
+    down = np.full(nr * nc, -1, dtype=np.int64)
+    for r in range(nr):
+        for c in range(nc):
+            i = r * nc + c
+            if not v[i]:
+                continue
+            best = 0.0
+            bj = -1
+            for k in range(8):
+                rr = r + DR[k]
+                cc = c + DC[k]
+                if rr < 0 or cc < 0 or rr >= nr or cc >= nc:
+                    continue
+                j = rr * nc + cc
+                if not v[j]:
+                    continue
+                s = (zf[i] - zf[j]) / DIST[k]
+                if s > best:
+                    best = s
+                    bj = j
+            down[i] = bj
+    return down
+
+
+@njit(cache=True)
+def children_csr(down):
+    """Umkehrung der Fließrichtungen: für jede Zelle die Liste ihrer Oberlieger."""
+    n = down.shape[0]
+    ptr = np.zeros(n + 1, dtype=np.int64)
+    for i in range(n):
+        if down[i] >= 0:
+            ptr[down[i] + 1] += 1
+    for i in range(n):
+        ptr[i + 1] += ptr[i]
+    fill = ptr[:-1].copy()
+    idx = np.empty(ptr[n], dtype=np.int64)
+    for i in range(n):
+        d = down[i]
+        if d >= 0:
+            idx[fill[d]] = i
+            fill[d] += 1
+    return ptr, idx
+
+
+@njit(cache=True)
+def upstream(starts, ptr, idx, stamp, mark, cap):
+    """Alle Zellen, deren Fließweg durch eine der Startzellen führt (Breitensuche
+    gegen die Fließrichtung). stamp/mark: Besuchsmarke ohne Zurücksetzen.
+    Rückgabe: Zellindizes (höchstens cap), abgeschnitten ja/nein."""
+    out = np.empty(cap, dtype=np.int64)
+    n = 0
+    for s in starts:
+        if stamp[s] != mark and n < cap:
+            stamp[s] = mark
+            out[n] = s
+            n += 1
+    h = 0
+    while h < n:
+        i = out[h]
+        h += 1
+        for t in range(ptr[i], ptr[i + 1]):
+            j = idx[t]
+            if stamp[j] != mark:
+                if n >= cap:
+                    return out[:n], True
+                stamp[j] = mark
+                out[n] = j
+                n += 1
+    return out[:n], False

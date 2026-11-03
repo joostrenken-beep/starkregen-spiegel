@@ -124,3 +124,86 @@ def split_features(fc_list, key_of):
         for f in fc["features"]:
             out.setdefault(key_of(f), []).append(f)
     return out
+
+
+def terrain_pmtiles(dgm_files, crs, out_path: Path, bounds_ll, minzoom=10, maxzoom=15, log=None):
+    """Geländekacheln für die 3D-Ansicht (Terrarium-Kodierung, PNG):
+    Höhe = R·256 + G + B/256 − 32768 (auf 0,1 m gerundet → kleinere Dateien)."""
+    import rasterio
+    from pyproj import Transformer
+    t = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+    x0, y0 = t.transform(bounds_ll[0], bounds_ll[1])
+    x1, y1 = t.transform(bounds_ll[2], bounds_ll[3])
+    res = 2 * ORIGIN / (256 * 2 ** maxzoom)
+    step = 2 ** (maxzoom - minzoom)
+    tx0 = int((x0 + ORIGIN) // (256 * res)) // step * step
+    ty0 = int((ORIGIN - y1) // (256 * res)) // step * step
+    tx1 = (int((x1 + ORIGIN) // (256 * res)) // step + 1) * step
+    ty1 = (int((ORIGIN - y0) // (256 * res)) // step + 1) * step
+    W, H = (tx1 - tx0) * 256, (ty1 - ty0) * 256
+    dst_t = from_origin(-ORIGIN + tx0 * 256 * res, ORIGIN - ty0 * 256 * res, res, res)
+    acc = np.zeros((H, W), np.float32)
+    cnt = np.zeros((H, W), np.float32)
+    to_m = Transformer.from_crs(crs, "EPSG:3857", always_xy=True)
+    inv = ~dst_t
+    for k, f in enumerate(dgm_files):
+        with rasterio.open(f) as s:
+            b = s.bounds
+            xs, ys = to_m.transform([b.left, b.left, b.right, b.right], [b.bottom, b.top, b.bottom, b.top])
+            c0, r0 = inv * (min(xs), max(ys))
+            c1, r1 = inv * (max(xs), min(ys))
+            c0, r0 = max(0, int(c0) - 1), max(0, int(r0) - 1)
+            c1, r1 = min(W, int(c1) + 2), min(H, int(r1) + 2)
+            if c1 <= c0 or r1 <= r0:
+                continue
+            tmp = np.full((r1 - r0, c1 - c0), np.nan, np.float32)
+            reproject(rasterio.band(s, 1), tmp, dst_transform=dst_t * dst_t.translation(c0, r0),
+                      dst_crs="EPSG:3857", resampling=Resampling.average, dst_nodata=np.nan)
+            tmp[tmp < -100] = np.nan
+            ok = np.isfinite(tmp)
+            acc[r0:r1, c0:c1][ok] += tmp[ok]
+            cnt[r0:r1, c0:c1][ok] += 1
+        if log and (k + 1) % 100 == 0:
+            log(f"    Gelände: {k + 1}/{len(dgm_files)} Kacheln")
+    with np.errstate(invalid="ignore"):
+        h = acc / cnt
+    del acc
+    fill = float(np.nanmedian(h)) if np.isfinite(h).any() else 0.0
+    h = np.where(np.isfinite(h), h, fill)
+
+    def enc(a):
+        v = np.round(a.astype(np.float64) * 10) / 10 + 32768.0
+        r = np.floor(v / 256)
+        g = np.floor(v - r * 256)
+        b = np.round((v - r * 256 - g) * 256)
+        img = np.dstack([r, g, np.minimum(b, 255)]).astype(np.uint8)
+        buf = io.BytesIO()
+        Image.fromarray(img, mode="RGB").save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+
+    tiles = {}
+    level = h
+    for z in range(maxzoom, minzoom - 1, -1):
+        f = 2 ** (maxzoom - z)
+        bx0, by0 = tx0 // f, ty0 // f
+        nty, ntx = level.shape[0] // 256, level.shape[1] // 256
+        for j in range(nty):
+            for i in range(ntx):
+                tiles[zxy_to_tileid(z, bx0 + i, by0 + j)] = enc(level[j * 256:(j + 1) * 256, i * 256:(i + 1) * 256])
+        if z > minzoom:
+            h2, w2 = level.shape[0] // 2, level.shape[1] // 2
+            level = level.reshape(h2, 2, w2, 2).mean(axis=(1, 3))
+    with open(out_path, "wb") as fh:
+        w = Writer(fh)
+        for tid in sorted(tiles):
+            w.write_tile(tid, tiles[tid])
+        e7 = lambda v: int(round(v * 1e7))  # noqa: E731
+        w.finalize({
+            "tile_type": TileType.PNG, "tile_compression": Compression.NONE,
+            "min_zoom": minzoom, "max_zoom": maxzoom,
+            "min_lon_e7": e7(bounds_ll[0]), "min_lat_e7": e7(bounds_ll[1]),
+            "max_lon_e7": e7(bounds_ll[2]), "max_lat_e7": e7(bounds_ll[3]),
+            "center_zoom": minzoom + 3, "center_lon_e7": e7((bounds_ll[0] + bounds_ll[2]) / 2),
+            "center_lat_e7": e7((bounds_ll[1] + bounds_ll[3]) / 2)},
+            {"name": out_path.stem, "description": "Starkregen-Spiegel – Gelände (DGM1, Terrarium)"})
+    return len(tiles)
