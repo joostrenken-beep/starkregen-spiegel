@@ -427,6 +427,7 @@ def fill_spill_drains(label, runoff_by_label, own_cap, parent, sibling, link, n_
     over = np.zeros(n_nodes)
     drained = np.zeros(n_nodes)
     rem = drain_cap.copy()
+    jump = np.full(n_nodes, -1, dtype=np.int64)
     to_ocean = 0.0
     n_lab = runoff_by_label.shape[0]
     st_x = np.empty(16, dtype=np.int64)
@@ -485,7 +486,17 @@ def fill_spill_drains(label, runoff_by_label, own_cap, parent, sibling, link, n_
                     continue
                 S = sibling[X]
                 if isfull[S]:
-                    X = parent[X]
+                    # beide voll -> nach oben; Ketten voller Knoten überspringen
+                    # (Pfadkompression, gültig weil volle Knoten voll bleiben)
+                    r = X
+                    while parent[r] >= 0 and isfull[r] and isfull[sibling[r]]:
+                        r = jump[r] if jump[r] >= 0 else parent[r]
+                    c = X
+                    while c != r and parent[c] >= 0 and isfull[c] and isfull[sibling[c]]:
+                        nxt = jump[c] if jump[c] >= 0 else parent[c]
+                        jump[c] = r
+                        c = nxt
+                    X = r
                 else:
                     over[X] += amt
                     X = label[link[X]]
