@@ -200,6 +200,13 @@ def run(cfg, bbox, show, out, args):
     write_tif(out / "dgm_eingebrannt.tif", np.where(valid, dem_b, np.nan), transform, crs)
 
     ring_id = landcover.building_ring(bid, cfg["gebaeude"]["ring_breite"])
+    inf_ras = None
+    vb = cfg["abfluss"].get("versickerung_boden", {})
+    if vb.get("aktiv") and quelle == "alkis" and not args.ohne_osm:
+        inf_ras, anteil = alkis.infiltration_raster(alkis.find_gpkg(alkis_dir), bbox, transform, shape, cfg)
+        log(f"Versickerung nach Boden: Bodenschätzung auf {anteil:.0%} der Fläche, "
+            f"Rate Median {np.median(inf_ras):.0f} mm/h (5 %: {np.percentile(inf_ras, 5):.0f}, "
+            f"95 %: {np.percentile(inf_ras, 95):.0f})")
     rcfg = cfg.get("risiko")
     if rcfg and buildings is not None and len(buildings) and layers is not None and "tn__bez" in layers["areas"]:
         kl, gr = schutz.classify(buildings, layers["areas"], cfg)
@@ -229,7 +236,7 @@ def run(cfg, bbox, show, out, args):
     for sc in runs:
         P, T = sc["niederschlag_mm"], sc["dauer_h"]
         r_m, bil = landcover.runoff(P, T, sealed, roof, ring_id, bid, water, cfg,
-                                    ohne_verluste=sc.get("ohne_verluste", False))
+                                    ohne_verluste=sc.get("ohne_verluste", False), inf_mm_h=inf_ras)
         r_m = np.where(valid, r_m, 0.0)
         res = run_fill_spill(h, r_m, culverts, T * 3600)
         flow_h = manning_depth(res.flow_volume, res.slope, T * 3600, nman, cell)

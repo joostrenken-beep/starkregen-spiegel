@@ -53,6 +53,29 @@ abfluss:
   unversiegelt:
     anfangsverlust_mm: 5.0
     infiltration_mm_h: 10.0      # Sand der Geest höher, Moor/Niederung niedriger
+  # Versickerung nach Bodenart aus der ALKIS-Bodenschätzung (vorsichtige Raten für
+  # Starkregen, mm/h, nach Anfangsverlust). Erster passender Präfix gilt. Flächen
+  # ohne Bodenschätzung (Siedlung): unversiegelt.infiltration_mm_h.
+  versickerung_boden:
+    aktiv: true
+    bodenart:
+      - ["Moor auf Sand", 4]
+      - ["Moor", 2]                   # Moor: meist wassergesättigt, Grundwasser hoch
+      - ["Sand auf Moor", 6]
+      - ["Lehm auf Moor", 3]
+      - ["Lehmiger Sand auf Moor", 4]
+      - ["Sand mit Moor", 6]
+      - ["Sand auf Ton", 8]
+      - ["Sand", 25]                  # Geestsand
+      - ["Anlehmiger Sand", 18]
+      - ["Lehmiger Sand", 12]
+      - ["Stark lehmiger Sand", 8]
+      - ["Sandiger Lehm", 6]
+      - ["Lehm", 5]
+      - ["Schwerer Lehm", 3]
+      - ["Ton", 2]
+    # Grünland-Wasserstufe (2 trocken … 5 nass): Faktor auf die Rate
+    wasserstufe_faktor: {"5": 0.2, "4": 0.4, "3": 0.7, "2": 1.0, "1": 1.0}
   kanal:
     # Pauschale Kanalkapazität für an den Kanal angeschlossene versiegelte Flächen.
     # 20 mm/h ≈ grob ein 2- bis 3-jährlicher Stundenregen in der Region –

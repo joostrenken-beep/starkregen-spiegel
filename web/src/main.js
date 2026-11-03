@@ -84,6 +84,14 @@ async function main() {
         paint: { 'raster-opacity': 0.9, 'raster-resampling': 'nearest', 'raster-fade-duration': 0 } });
     }
 
+    // Vergleichsebene: amtliche Hinweiskarte Starkregengefahren (WMS des BKG)
+    map.addSource('hwk', { type: 'raster', tileSize: 256, attribution: 'Hinweiskarte Starkregen © BKG/NLWKN',
+      tiles: ['https://sgx.geodatenzentrum.de/wms_starkregen?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap'
+        + '&LAYERS=ni_tiefe_extrem&STYLES=&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256'
+        + '&FORMAT=image/png&TRANSPARENT=TRUE'] });
+    map.addLayer({ id: 'hwk', type: 'raster', source: 'hwk', layout: { visibility: 'none' },
+      paint: { 'raster-opacity': 0.75 } });
+
     map.addSource('gebaeude', { type: 'geojson', data: EMPTY, promoteId: 'id' });
     map.addLayer({ id: 'gebaeude', type: 'fill', source: 'gebaeude', minzoom: 13,
       paint: { 'fill-color': ampelColor(state.sid), 'fill-opacity': ampelOpacity(state.sid) } });
@@ -211,9 +219,10 @@ function setupLayerPanel(map) {
     btn.setAttribute('aria-expanded', String(!panel.hidden));
   });
   const groups = { tiefe: state.meta.szenarien.map((x) => `tiefe_${x.id}`), fliesswege: ['fliesswege', 'fliesswege-anim'], senken: ['senken'],
-    gebaeude: ['gebaeude', 'gebaeude-linie', 'gebaeude-s4'] };
+    gebaeude: ['gebaeude', 'gebaeude-linie', 'gebaeude-s4'], hwk: ['hwk'] };
   panel.querySelectorAll('input[data-layer]').forEach((cb) => {
     cb.addEventListener('change', () => {
+      if (cb.dataset.layer === 'hwk') document.getElementById('hwk-hinweis').hidden = !cb.checked;
       groups[cb.dataset.layer].forEach((id) => {
         const on = cb.checked && (cb.dataset.layer !== 'tiefe' || id === `tiefe_${state.sid}`);
         map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');

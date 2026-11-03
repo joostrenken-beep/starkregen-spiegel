@@ -206,3 +206,36 @@ def corridor_mask(layers, extra_lines, transform, shape, stream_buffer=2.0, culv
     if not shapes_:
         return np.zeros(shape, bool)
     return rasterize(shapes_, out_shape=shape, transform=transform, fill=0, dtype="uint8") == 1
+
+
+def infiltration_raster(gpkg, bbox, transform, shape, cfg):
+    """Versickerungsrate (mm/h) je Zelle aus der ALKIS-Bodenschätzung.
+
+    Bodenart (erster passender Präfix der Tabelle) × Faktor für die Wasserstufe
+    (Grünland: hoch anstehendes Grundwasser). Ohne Bodenschätzung (bebaute Flächen):
+    Einheitswert abfluss.unversiegelt.infiltration_mm_h.
+    """
+    vc = cfg["abfluss"]["versickerung_boden"]
+    default = float(cfg["abfluss"]["unversiegelt"]["infiltration_mm_h"])
+    bs = gpd.read_file(gpkg, layer="bodenschaetzung", bbox=tuple(bbox),
+                       columns=["bez_boa", "bez_wav"])
+    out = np.full(shape, default, dtype=np.float32)
+    if len(bs) == 0:
+        return out, 0.0
+    rates = []
+    for boa, wav in zip(bs["bez_boa"].fillna(""), bs["bez_wav"].fillna("")):
+        r = default
+        for prefix, val in vc["bodenart"]:
+            if boa.startswith(prefix):
+                r = float(val)
+                break
+        for stufe, fak in vc["wasserstufe_faktor"].items():
+            if wav.replace(" ", "").startswith(f"Wasserstufe({stufe}"):
+                r *= float(fak)
+                break
+        rates.append(r)
+    shapes_ = [(g, v) for g, v in zip(bs.geometry, rates) if g is not None]
+    ras = rasterize(shapes_, out_shape=shape, transform=transform, fill=-1.0, dtype="float32")
+    cover = ras >= 0
+    out[cover] = ras[cover]
+    return out, float(cover.mean())
