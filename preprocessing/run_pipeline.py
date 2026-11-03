@@ -60,13 +60,26 @@ def main():
     ap.add_argument("--fetch", action="store_true", help="DGM1-Kacheln vom LGLN laden")
     ap.add_argument("--ohne-web", action="store_true", help="keinen Web-Export erzeugen")
     args = ap.parse_args()
+    args.block = False
     cfg = yaml.safe_load(Path(args.config).read_text())
     g = cfg["gebiet"]
     bbox = g["test_kachel"] if args.test else g["rechnung"]
     show = g["test_kachel"] if args.test else g["kern"]
     out = ROOT / cfg["ausgabe"]["ordner"] / ("test" if args.test else "pilot")
+    run(cfg, bbox, show, out, args)
+
+
+def run(cfg, bbox, show, out, args):
+    """Rechnet ein Gebiet: bbox = Rechengebiet (mit Puffer), show = Kern (Ergebnisse).
+
+    args.block = True: Block einer Stadtberechnung – kein Einzel-Web-Export, keine
+    Kontrollbilder/Plausibilitätsbericht; die Ergebnisse des Kerns werden zurückgegeben.
+    """
     out.mkdir(parents=True, exist_ok=True)
+    g = cfg["gebiet"]
     cell = float(cfg["dgm"]["zellgroesse"])
+    block = getattr(args, "block", False)
+    result = {"depth": {}, "flows": {}}
 
     # 1) DGM ------------------------------------------------------------------
     tiles_dir = ROOT / cfg["dgm"]["ordner"]
@@ -207,7 +220,7 @@ def main():
     vh = cfg.get("vergleich_hwk", {})
     runs = list(cfg["szenarien"]) + ([vh["szenario"]] if vh.get("aktiv") else [])
     web = ROOT / cfg["ausgabe"]["web_ordner"]
-    do_web = not args.ohne_web and not args.test
+    do_web = not args.ohne_web and not args.test and not block
     if do_web:
         web.mkdir(parents=True, exist_ok=True)
     web_files = {"tiefe": {}, "fliesswege": {}}
@@ -223,8 +236,11 @@ def main():
         flow_h[res.lake_depth > 0.005] = 0
         depth = np.maximum(res.lake_depth, flow_h)
         depth[roof | ~valid] = 0
-        write_tif(out / f"{sc['id']}_wassertiefe.tif", depth, transform, crs)
-        write_tif(out / f"{sc['id']}_fliessvolumen.tif", res.flow_volume, transform, crs)
+        if block:
+            write_tif(out / f"{sc['id']}_wassertiefe_kern.tif", depth[rs, cs], tcore, crs)
+        else:
+            write_tif(out / f"{sc['id']}_wassertiefe.tif", depth, transform, crs)
+            write_tif(out / f"{sc['id']}_fliessvolumen.tif", res.flow_volume, transform, crs)
         bil.update({"in_senken_m3": res.stored, "aus_gebiet_m3": res.to_ocean,
                     "durch_durchlaesse_m3": res.durchlass_m3,
                     "bilanzfehler_m3": res.runoff_total - res.stored - res.to_ocean,
@@ -273,9 +289,23 @@ def main():
             web_files["fliesswege"][sid] = f"data/fliesswege_{sid}.json"
             web_depths[sid] = depth[rs, cs]
             log(f"  Web: Tiefe-Bild + {len(fl['features'])} Fließweg-Linien")
+        if block and not sc.get("ohne_verluste"):
+            wc = cfg.get("web", {})
+            if "near_bld" not in result:
+                d = int(wc.get("fliessweg_nahbereich_m", 50) / cell)
+                result["near_bld"] = ndimage.maximum_filter(roof.astype(np.uint8), size=2 * d + 1) > 0
+            result["depth"][sc["id"]] = depth[rs, cs].astype(np.float32)
+            result["flows"][sc["id"]] = web_export.flow_lines(
+                dem_b, valid, res.source, res.absorb, transform, crs, rs, cs,
+                min_v=float(wc.get("fliessweg_min_m3", 30)), simplify=1.5,
+                near=result["near_bld"], min_v_far=float(wc.get("fliessweg_aussen_min_m3", 300)))
         if vh.get("aktiv") and sc["id"] == vh["szenario"]["id"]:
             log("Vergleich mit Hinweiskarte Starkregengefahren (WMS) …")
-            ref, unk = hwk.fetch_class_raster(show, vh["wms_layer"])
+            try:
+                ref, unk = hwk.fetch_class_raster(show, vh["wms_layer"])
+            except Exception as ex:  # Vergleich ist optional – Berechnung nicht abbrechen
+                log(f"  Hinweiskarte nicht abrufbar ({ex}) – Vergleich für dieses Gebiet entfällt")
+                continue
             own = depth[rs, cs]
             ref = ref[:own.shape[0], :own.shape[1]]
             m = ~roof[rs, cs]
@@ -307,15 +337,19 @@ def main():
                     f"Matrix (Zeilen HWK grün/gelb/rot, Spalten eigen): {conf.tolist()}")
             stats["vergleich_hwk"] = kz
             write_tif(out / "hwk_referenz_klassen.tif", ref, transform * transform.translation(cs.start, rs.start), crs)
-            hwk.plot(out / "hwk_vergleich.png", preview.hillshade(dem_b[rs, cs]), own, ref,
-                     f"Methodenvergleich: {P} mm in {T} h ohne Kanal/Versickerung – "
-                     f"Treffer {kz['10cm']['trefferquote']:.0%}, Fehlalarm {kz['10cm']['fehlalarmquote']:.0%} (≥10 cm)",
-                     roof[rs, cs])
+            if block:
+                result["hwk_counts"] = hwk.counts(own, ref, m)
+            if not block:
+                hwk.plot(out / "hwk_vergleich.png", preview.hillshade(dem_b[rs, cs]), own, ref,
+                         f"Methodenvergleich: {P} mm in {T} h ohne Kanal/Versickerung – "
+                         f"Treffer {kz['10cm']['trefferquote']:.0%}, "
+                         f"Fehlalarm {kz['10cm']['fehlalarmquote']:.0%} (≥10 cm)",
+                         roof[rs, cs])
             log(f"  ≥10 cm: Treffer {kz['10cm']['trefferquote']:.0%}, Fehlalarm {kz['10cm']['fehlalarmquote']:.0%}, "
                 f"CSI {kz['10cm']['csi']:.2f};  ≥30 cm: Treffer {kz['30cm']['trefferquote']:.0%}, "
                 f"Fehlalarm {kz['30cm']['fehlalarmquote']:.0%}")
             continue
-        if sc["id"] == plausi_id:
+        if sc["id"] == plausi_id and not block:
             log("Plausibilitätsbericht …")
             plausi.report(out, dem_b[rs, cs], sinks[rs, cs], res.flow_volume[rs, cs], depth[rs, cs],
                           roof[rs, cs], transform * transform.translation(cs.start, rs.start), crs,
@@ -329,10 +363,12 @@ def main():
         log(f"{sc['id']}: {P} mm/{T} h → Oberflächenabfluss {bil['oberflaechenabfluss_m3']:,.0f} m³, "
             f"in Senken {res.stored:,.0f} m³, aus Gebiet {res.to_ocean:,.0f} m³, "
             f"Bilanzfehler {bil['bilanzfehler_m3']:.2e} m³")
-        preview.save_panel(out / f"{sc['id']}_kontrolle.png", dem_b[rs, cs], extent,
-                           roof[rs, cs] if roof.any() else None, depth[rs, cs],
-                           res.flow_volume[rs, cs], sinks[rs, cs],
-                           f"Starkregen-Spiegel – {P} mm in {T} h (Blockregen) – Orientierung, keine amtliche Karte")
+        if not block:
+            preview.save_panel(out / f"{sc['id']}_kontrolle.png", dem_b[rs, cs], extent,
+                               roof[rs, cs] if roof.any() else None, depth[rs, cs],
+                               res.flow_volume[rs, cs], sinks[rs, cs],
+                               f"Starkregen-Spiegel – {P} mm in {T} h (Blockregen) – "
+                               "Orientierung, keine amtliche Karte")
 
     if buildings is not None and len(buildings):
         # Schutzziel (A 118-orientiert): trocken (< 10 cm) bis zum Szenario der Schutzklasse
@@ -388,6 +424,12 @@ def main():
         sizes = sum(f.stat().st_size for f in web.glob("*")) / 1e6
         log(f"Web-Export: {web} ({sizes:.1f} MB)")
     log(f"Fertig. Ergebnisse in {out}")
+    if block:
+        result.pop("near_bld", None)
+        result.update({"buildings": buildings, "stats": stats, "crs": crs, "tcore": tcore,
+                       "addresses": layers["addresses"] if layers is not None else None,
+                       "sinks": web_export.sinks_geojson(sinks[rs, cs], result["depth"], tcore, crs)})
+    return result
 
 
 if __name__ == "__main__":

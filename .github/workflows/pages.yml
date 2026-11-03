@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
     paths: ["web/**", ".github/workflows/pages.yml"]
+  # neue Daten (Branch "daten") lösen ebenfalls eine Veröffentlichung aus
+  repository_dispatch:
+    types: [daten-aktualisiert]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +28,12 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      # Berechnungsergebnisse liegen auf dem Branch "daten" (wird bei jeder
+      # Neuberechnung ersetzt, damit der Git-Verlauf nicht wächst)
+      - uses: actions/checkout@v4
+        with:
+          ref: daten
+          path: web/public/data
       - uses: actions/setup-node@v4
         with:
           node-version: 20

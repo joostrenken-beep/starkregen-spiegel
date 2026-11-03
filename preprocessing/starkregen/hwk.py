@@ -10,6 +10,7 @@ Tiefenklassen zurückübersetzt (Klassenuntergrenze in m, 0 = < 10 cm).
 from __future__ import annotations
 
 import io
+import time
 from pathlib import Path
 
 import matplotlib
@@ -48,8 +49,15 @@ def fetch_class_raster(bbox, layer="ni_tiefe_extrem", px=1.0, chunk=1000):
             params = {"SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetMap", "LAYERS": layer,
                       "STYLES": "", "CRS": "EPSG:25832", "BBOX": ",".join(f"{v:.3f}" for v in bx),
                       "WIDTH": w, "HEIGHT": h, "FORMAT": "image/png", "TRANSPARENT": "TRUE"}
-            r = requests.get(WMS, params=params, timeout=120)
-            r.raise_for_status()
+            for versuch in range(6):           # Dienst antwortet gelegentlich mit 503
+                try:
+                    r = requests.get(WMS, params=params, timeout=120)
+                    r.raise_for_status()
+                    break
+                except requests.RequestException:
+                    if versuch == 5:
+                        raise
+                    time.sleep(10 * (versuch + 1))
             a = np.array(Image.open(io.BytesIO(r.content)).convert("RGBA"))
             m = a[..., 3] > 0
             cls = np.zeros((h, w), np.float32)
@@ -127,3 +135,14 @@ def plot(path, hill, own_depth, ref_cls, title, building=None):
     fig.suptitle(title, fontsize=14)
     fig.savefig(path, dpi=100)
     plt.close(fig)
+
+
+def counts(own_depth, ref_cls, mask, thresholds=(0.10, 0.30, 0.50)):
+    """Rohzählungen (Treffer, verpasst, Fehlalarm) je Schwelle – zum Aufsummieren über Blöcke."""
+    own_cls = to_class(own_depth)
+    out = {}
+    for t in thresholds:
+        a = (own_cls >= t) & mask
+        b = (ref_cls >= t) & mask
+        out[f"{int(t * 100)}cm"] = [int((a & b).sum()), int((~a & b).sum()), int((a & ~b).sum())]
+    return out

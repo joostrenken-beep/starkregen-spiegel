@@ -66,12 +66,19 @@ def depth_png(depth, transform, crs, path: Path, res_merc=1.6):
     return [[_r(p[0]), _r(p[1])] for p in (tl, tr, br, bl)]
 
 
-def flow_lines(dem, valid, source, absorb, transform, crs, rs, cs, min_v=30.0, simplify=1.0):
-    """Fließwege (D8) im Anzeigeausschnitt als Linien in Fließrichtung."""
+def flow_lines(dem, valid, source, absorb, transform, crs, rs, cs, min_v=30.0, simplify=1.0,
+               near=None, min_v_far=None):
+    """Fließwege (D8) im Anzeigeausschnitt als Linien in Fließrichtung.
+
+    near/min_v_far: feine Fließwege (ab min_v) nur in der Nähe von Gebäuden (near=True),
+    im Außenbereich nur Hauptfließwege ab min_v_far."""
     acc, down = hydro.d8_accumulate(dem, valid, source.reshape(dem.shape), absorb)
     nr, nc = dem.shape
     sel = np.zeros(dem.shape, bool)
-    sel[rs, cs] = (acc[rs, cs] >= min_v) & valid[rs, cs] & ~absorb[rs, cs]
+    thr = acc[rs, cs] >= min_v
+    if near is not None and min_v_far is not None:
+        thr = np.where(near[rs, cs], thr, acc[rs, cs] >= min_v_far)
+    sel[rs, cs] = thr & valid[rs, cs] & ~absorb[rs, cs]
     sf = sel.ravel()
     accf = acc.ravel()
     idx = np.flatnonzero(sf)
@@ -101,7 +108,7 @@ def flow_lines(dem, valid, source, absorb, transform, crs, rs, cs, min_v=30.0, s
         v = float(accf[cells[-2]])
         feats.append({"type": "Feature", "properties": {"v": int(round(v))},
                       "geometry": {"type": "LineString",
-                                   "coordinates": [[_r(a), _r(b)] for a, b in zip(lon, lat)]}})
+                                   "coordinates": [[_r(a, 5), _r(b, 5)] for a, b in zip(lon, lat)]}})
     return {"type": "FeatureCollection", "features": feats}
 
 
@@ -125,7 +132,10 @@ def sinks_geojson(sinks, depths: dict, transform, crs, min_depth=0.10, min_area=
           "tmax": round(float(dmax[v - 1]), 2),
           **{f"f_{k}": round(float(min(1.0, fill[k][v - 1] / max(vol[v - 1], 1e-6))), 2) for k in depths}}
          for v, g in polys.items()], geometry="geometry", crs=crs).to_crs("EPSG:4326")
-    return json.loads(gdf.to_json(drop_id=True))
+    gj = json.loads(gdf.to_json(drop_id=True))
+    for f in gj["features"]:
+        _round_geom(f["geometry"], 5)
+    return gj
 
 
 def buildings_geojson(buildings, scen_ids, bounds):
@@ -158,9 +168,9 @@ def buildings_geojson(buildings, scen_ids, bounds):
     return gj
 
 
-def _round_geom(g):
+def _round_geom(g, nd=6):
     def rnd(c):
-        return [rnd(x) for x in c] if isinstance(c[0], list) else [_r(c[0]), _r(c[1])]
+        return [rnd(x) for x in c] if isinstance(c[0], list) else [_r(c[0], nd), _r(c[1], nd)]
     g["coordinates"] = rnd(g["coordinates"])
 
 
@@ -187,8 +197,8 @@ def write_meta(path: Path, bounds_utm, crs, scenarios, files, extra=None):
     x1, y1 = t.transform(bounds_utm[2], bounds_utm[3])
     import hashlib
     h = hashlib.sha1()
-    for f in sorted(path.parent.glob("*")):
-        if f.name != "meta.json":
+    for f in sorted(path.parent.rglob("*")):
+        if f.is_file() and f.name != "meta.json":
             h.update(f.read_bytes())
     meta = {"stand": date.today().isoformat(), "version": h.hexdigest()[:10],
             "gebiet": {"bounds": [_r(x0), _r(y0), _r(x1), _r(y1)],

@@ -31,14 +31,7 @@ class Hierarchy:
 
     def root_of_leaf(self) -> np.ndarray:
         """Wurzelknoten je Einzelsenke (oberste Senke, die zum Rand/Unterlieger überläuft)."""
-        root = np.arange(self.n_labels)
-        p = self.parent
-        for leaf in range(1, self.n_labels):
-            x = leaf
-            while p[x] >= 0:
-                x = p[x]
-            root[leaf] = x
-        return root
+        return hydro.root_nodes(self.parent, self.n_nodes)[: self.n_labels].copy()
 
     def sink_depth_full(self) -> np.ndarray:
         """Senkentiefe, wenn alle Senken bis zum Überlauf gefüllt wären (m)."""
@@ -180,19 +173,17 @@ def breach_corridors(dem, valid, corridor, max_len=1000, min_depth=0.05, iterati
                 lower |= zp[1 + dr:1 + dr + z.shape[0], 1 + dc:1 + dc + z.shape[1]] < z
         starts = np.flatnonzero((corridor & (lab > 0) & ~lower).ravel())
         starts = starts[np.argsort(z.ravel()[starts])[::-1]]   # von oben nach unten
-        changed = 0
-        for st in starts:
-            m, tgt, cut, crest = hydro.breach_from(z, valid, corridor, lab, int(st), max_len,
-                                                   cost, steps, prev, touched, max_cut)
-            changed += m
-            if m == 0 and tgt >= 0 and max_cut >= 0 and cut > max_cut and crest >= 0:
-                # gleiche Dammquerung nur einmal erfassen (Raster dedupe_m)
-                cr, cc = divmod(crest, ncols)
-                key = (int(cr // dedupe_m), int(cc // dedupe_m))
-                old = culverts.get(key)
-                if old is None or cut < old["aushub_m"]:
-                    culverts[key] = {"einlauf": int(st), "auslauf": int(tgt), "krone": int(crest),
-                                     "aushub_m": float(cut)}
+        changed, c_st, c_tg, c_cut, c_cr = hydro.breach_many(
+            z, valid, corridor, lab, starts.astype(np.int64), max_len, cost, steps, prev, touched,
+            float(max_cut))
+        for st, tgt, cut, crest in zip(c_st, c_tg, c_cut, c_cr):
+            # gleiche Dammquerung nur einmal erfassen (Raster dedupe_m)
+            cr, cc = divmod(int(crest), ncols)
+            key = (int(cr // dedupe_m), int(cc // dedupe_m))
+            old = culverts.get(key)
+            if old is None or cut < old["aushub_m"]:
+                culverts[key] = {"einlauf": int(st), "auslauf": int(tgt), "krone": int(crest),
+                                 "aushub_m": float(cut)}
         total += changed
         if changed == 0:
             break
