@@ -55,7 +55,7 @@ export function catchmentSection(sb, shown) {
     <button type="button" class="secondary" data-action="einzug" aria-pressed="${shown}">
       ${shown ? 'Einzugsgebiet ausblenden' : 'Einzugsgebiet auf der Karte zeigen'}</button>
     <p class="small">Berechnet über das Geländemodell (DGM1) mit Gebäuden als Hindernis; Mulden werden als
-      vollgelaufen angenommen (Starkregen-Fall), das Kanalnetz nicht berücksichtigt.${e.t ? ' Das Gebiet reicht über den Rechenausschnitt hinaus.' : ''}</p>
+      vollgelaufen angenommen (Starkregen-Fall), das Kanalnetz nicht berücksichtigt.${e.t ? ' Das tatsächliche Gebiet ist größer – die Berechnung wurde hier begrenzt.' : ''}</p>
   </details>`;
 }
 

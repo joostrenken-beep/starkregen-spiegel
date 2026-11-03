@@ -167,7 +167,7 @@ function ampelColor(sid) {
   return ['match', ['get', `g_${sid}`], 3, GEF[3], 2, GEF[2], 1, GEF[1], GEF[0]];
 }
 function extrusionColor(sid) {
-  return ['case', ['boolean', ['feature-state', 'sel'], false], '#1b1f24', ampelColor(sid)];
+  return ['case', ['boolean', ['feature-state', 'sel'], false], '#3b4a5c', ampelColor(sid)];
 }
 function ampelOpacity(sid) {
   if (state.view === 'risiko') return ['match', ['get', `r_${sid}`], 3, 0.9, 2, 0.85, 1, 0.75, 0.3];
@@ -398,6 +398,7 @@ function showEinzug(map) {
   const wide = window.innerWidth >= 760;
   const padding = wide ? { right: sheet.offsetWidth + 40, top: 40, bottom: 40, left: 40 }
     : { bottom: sheet.offsetHeight + 20, top: 80, left: 30, right: 30 };
+  map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });   // flyTo-Abstand nicht doppelt zählen
   map.fitBounds([[w, s], [e, n]], { padding, maxZoom: 18, duration: reducedMotion ? 0 : 800 });
 }
 
