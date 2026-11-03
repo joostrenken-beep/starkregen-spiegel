@@ -26,7 +26,7 @@ from scipy import ndimage
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from starkregen import alkis, dgm, hydro, fetch, hwk, landcover, osm, plausi, preview, schutz, web_export  # noqa: E402
+from starkregen import alkis, dgm, hydro, fetch, hwk, kostra, landcover, osm, plausi, preview, schutz, web_export  # noqa: E402
 from starkregen.model import analyse_terrain, breach_corridors, manning_depth, run_fill_spill  # noqa: E402
 
 
@@ -78,6 +78,16 @@ def run(cfg, bbox, show, out, args):
     out.mkdir(parents=True, exist_ok=True)
     g = cfg["gebiet"]
     cell = float(cfg["dgm"]["zellgroesse"])
+    # Kanalabschlag aus KOSTRA (Rasterfeld in der Mitte des Kerngebiets)
+    kk = cfg["abfluss"]["kanal"].get("kostra")
+    if kk:
+        import copy
+        cfg = copy.deepcopy(cfg)
+        hn = kostra.werte(ROOT / "data/raw/kostra", int(kk["dauer_min"]),
+                          (show[0] + show[2]) / 2, (show[1] + show[3]) / 2)
+        wert = hn[int(kk["wiederkehr_a"])] * 60.0 / int(kk["dauer_min"])
+        cfg["abfluss"]["kanal"]["abschlag_mm_h"] = round(wert, 1)
+        log(f"Kanalabschlag aus KOSTRA (D={kk['dauer_min']} min, T={kk['wiederkehr_a']} a): {wert:.1f} mm/h")
     block = getattr(args, "block", False)
     result = {"depth": {}, "flows": {}}
 

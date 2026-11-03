@@ -74,10 +74,14 @@ abfluss:
     # Grünland-Wasserstufe (2 trocken … 5 nass): Faktor auf die Rate
     wasserstufe_faktor: {"5": 0.2, "4": 0.4, "3": 0.7, "2": 1.0, "1": 1.0}
   kanal:
-    # Pauschale Kanalkapazität für an den Kanal angeschlossene versiegelte Flächen.
-    # 20 mm/h ≈ grob ein 2- bis 3-jährlicher Stundenregen in der Region –
-    # bitte mit KOSTRA-DWD-2020 (Rasterfeld Osterholz-Scharmbeck) prüfen.
-    abschlag_mm_h: 20.0
+    # Pauschale Kanalkapazität für an den Kanal angeschlossene versiegelte Flächen
+    # und Dächer. Wird aus KOSTRA-DWD-2020 bestimmt (Rasterfeld in der Blockmitte):
+    # Annahme: das Netz leitet den Regen der Dauer dauer_min und Wiederkehrzeit
+    # wiederkehr_a ohne Oberflächenabfluss ab (A 118: Wohngebiete Bemessung ca. 2 a).
+    kostra:
+      dauer_min: 60
+      wiederkehr_a: 2
+    abschlag_mm_h: 20.0            # nur Rückfallwert, falls KOSTRA nicht vorliegt
   # Versiegelungsgrad aus ALKIS "tatsächliche Nutzung" (ohne Gebäude, die zählen
   # separat als Dach). Erster passender Präfix gewinnt. Werte = Schätzungen für den
   # nicht überbauten Teil der Fläche; bei Bedarf anpassen.
@@ -210,4 +214,7 @@ risiko:
   # Schutzziel in Anlehnung an A 118: je höher die Schutzwürdigkeit, desto
   # seltener (stärker) der Regen, bis zu dem das Gebäude trocken bleiben soll.
   # Zuordnung Szenario <-> Wiederkehrzeit bitte mit KOSTRA-DWD-2020 festlegen.
-  schutzziel_szenario: {1: p30, 2: p30, 3: p50, 4: p80}
+  # KOSTRA-DWD-2020 (D = 60 min) für OHZ: T20 ≈ 28,5 mm, T30 ≈ 30,9 mm, T100 ≈ 38,4 mm.
+  # 30 mm ≈ 30-jährlich -> deckt A 118 Wohngebiet (1 in 20 a) und Gewerbe (1 in 30 a);
+  # S4 strenger: 50 mm (seltener als 100-jährlich), wegen sehr hohem Schadenspotenzial (M 119).
+  schutzziel_szenario: {1: p30, 2: p30, 3: p30, 4: p50}

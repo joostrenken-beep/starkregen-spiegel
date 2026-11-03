@@ -225,15 +225,24 @@ def export(cfg, blocks, work, outline, args):
         stats["vergleich_hwk"]["gebaeude_matrix"] = hwk_bld.tolist()
     (out / "statistik.json").write_text(json.dumps(stats, indent=2, ensure_ascii=False))
 
+    from starkregen import kostra
+    cx, cy = outline.centroid.x, outline.centroid.y
+    hn60 = kostra.werte(ROOT / "data/raw/kostra", 60, cx, cy)
+    kk = cfg["abfluss"]["kanal"].get("kostra")
+    kanal = (kostra.werte(ROOT / "data/raw/kostra", int(kk["dauer_min"]), cx, cy)[int(kk["wiederkehr_a"])]
+             * 60 / int(kk["dauer_min"])) if kk else cfg["abfluss"]["kanal"]["abschlag_mm_h"]
     scen = [{"id": x["id"], "mm": x["niederschlag_mm"], "dauer_h": x["dauer_h"],
-             "label": f"{x['niederschlag_mm']} mm in {x['dauer_h']} h"} for x in cfg["szenarien"]]
+             "label": f"{x['niederschlag_mm']} mm in {x['dauer_h']} h",
+             "jaehrlichkeit": kostra.jaehrlichkeit_text(x["niederschlag_mm"], hn60) if x["dauer_h"] == 1 else ""}
+            for x in cfg["szenarien"]]
     rcfg = cfg.get("risiko")
     web_export.write_meta(web / "meta.json", outline.bounds, "EPSG:25832", scen,
                           {"tiefe_pmtiles": tiles, "zellen": index, "zellen_url": "data/zellen/",
                            "adressen": "data/adressen.json", "umriss": "data/stadtgebiet.json"}, {
         "modus": "zellen", "name": cfg["gebiet"]["name"],
         "zellen_minzoom": cfg["web"].get("zellen_minzoom", 14),
-        "ampel": cfg["ampel"], "kanal_mm_h": cfg["abfluss"]["kanal"]["abschlag_mm_h"],
+        "ampel": cfg["ampel"], "kanal_mm_h": round(kanal, 1),
+        "kostra_d60": hn60,
         "risiko": {"matrix": rcfg["matrix"], "gefaehrdung_grenzen_m": rcfg["gefaehrdung_grenzen_m"],
                    "schutzziel_szenario": {str(k): v for k, v in rcfg["schutzziel_szenario"].items()}} if rcfg else None,
         "quellen": ["DGM1 © LGLN (dl-de/by-2-0)", "ALKIS © LGLN (dl-de/by-2-0)"],

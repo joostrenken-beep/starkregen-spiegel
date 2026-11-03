@@ -269,9 +269,12 @@ function setupScenario(map) {
   range.value = String(scen.findIndex((x) => x.id === state.sid));
   document.getElementById('rain-ticks-labels').innerHTML = scen.map((x) => `<span>${x.mm}</span>`).join('');
   lbl.textContent = `${scen[+range.value].mm} mm`;
+  const jt = document.getElementById('rain-jt');
+  jt.textContent = scen[+range.value].jaehrlichkeit ? `(${scen[+range.value].jaehrlichkeit}, KOSTRA-DWD-2020)` : '';
   range.addEventListener('input', async () => {
     const sc = scen[+range.value];
     lbl.textContent = `${sc.mm} mm`;
+    jt.textContent = sc.jaehrlichkeit ? `(${sc.jaehrlichkeit}, KOSTRA-DWD-2020)` : '';
     state.sid = sc.id;
     const tiefeAn = document.querySelector('input[data-layer=tiefe]').checked;
     scen.forEach((x) => map.setLayoutProperty(`tiefe_${x.id}`, 'visibility', tiefeAn && x.id === sc.id ? 'visible' : 'none'));
