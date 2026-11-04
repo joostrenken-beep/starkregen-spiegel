@@ -19,6 +19,7 @@ schnelles Testgebiet erhalten (`config/pilot.yaml`).
 | M2 | Karte mit Adresssuche und Layern (PWA) | ✅ |
 | M3 | Grundstücks-Steckbrief, Einzugsgebiet je Gebäude, Selbstschutz-Tipps, 3D-Ansicht | ✅ |
 | M4 | KOSTRA-Kanalabschlag, Versickerung nach Boden, Hinweiskarte als Vergleich, Durchlass-Prüfliste | ✅ |
+| M5 | PDF-Export (Steckbrief, Kartenausschnitt), rote Markierung S4 ≥ 30 cm bei T ≈ 30 a, einklappbares Bedienfeld, Datenschutzhinweis (Impressum folgt bei öffentlicher Verbreitung) | ✅ |
 
 ## Ordnerstruktur
 

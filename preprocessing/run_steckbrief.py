@@ -199,9 +199,33 @@ def export(cfg, blocks, work, outline):
 
     meta["dateien"]["steckbrief_url"] = "data/steckbrief/"
     meta["dateien"]["gelaende_pmtiles"] = "data/gelaende.pmtiles"
+    n_mk = write_markierung(web, cfg, meta)
+    log(f"Markiert: {n_mk} Gebäude")
     meta["version"] = hashlib.sha1(f"{meta['version']}-m3-{time.time()}".encode()).hexdigest()[:10]
     (web / "meta.json").write_text(json.dumps(meta, indent=1, ensure_ascii=False))
     log("Steckbrief-Export fertig")
+
+
+def write_markierung(web, cfg, meta):
+    """Übersicht der markierten Gebäude (z. B. S4 mit ≥ 30 cm bei T ≈ 30 a) als Punkte –
+    damit sie auch in kleinen Zoomstufen sichtbar sind (Gebäude selbst erst ab Zoom 14)."""
+    mk = cfg["web"].get("markierung", {"szenario": "p30", "gefaehrdung_ab": 2, "schutzklasse": 4})
+    feats = []
+    for f in sorted((web / "zellen").glob("*.json")):
+        for ft in json.loads(f.read_text())["g"]["features"]:
+            p = ft["properties"]
+            if p.get("s") == mk["schutzklasse"] and p.get(f"g_{mk['szenario']}", 0) >= mk["gefaehrdung_ab"]:
+                ring = ft["geometry"]["coordinates"][0]
+                ring = ring[0] if isinstance(ring[0][0], list) else ring
+                x = sum(c[0] for c in ring) / len(ring)
+                y = sum(c[1] for c in ring) / len(ring)
+                cm = int(p[mk["szenario"]].split("|")[1])
+                feats.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [round(x, 6), round(y, 6)]},
+                              "properties": {"id": p["id"], "a": p.get("a", ""), "art": p.get("art", ""), "cm": cm, "c": p.get("c")}})
+    (web / "markiert.json").write_text(json.dumps({"type": "FeatureCollection", "features": feats},
+                                                  separators=(",", ":"), ensure_ascii=False))
+    meta["markierung"] = {**mk, "datei": "data/markiert.json", "anzahl": len(feats)}
+    return len(feats)
 
 
 def main():

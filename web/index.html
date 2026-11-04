@@ -36,9 +36,11 @@
     <label><input type="checkbox" data-layer="hwk" /> Vergleich: amtliche Hinweiskarte (BKG/NLWKN)</label>
     <p class="small" id="hwk-hinweis" hidden>Hinweiskarte Starkregengefahren, Szenario „extrem“ (100 mm/h, ohne Kanal und Versickerung), 2D-Modell. © BKG/NLWKN. Unabhängig vom Regen-Regler.</p>
     <div class="legend" id="legend"></div>
+    <button type="button" id="pdf-karte" class="secondary">Kartenausschnitt als PDF</button>
   </section>
 
   <footer class="bottombar">
+    <button type="button" id="bar-toggle" class="bar-toggle" aria-expanded="true" title="Bedienfeld einklappen">▾</button>
     <div class="view-switch" role="group" aria-label="Ansicht">
       <button type="button" data-view="gef" aria-pressed="true">Wasser am Haus</button>
       <button type="button" data-view="schaden" aria-pressed="false">Schadens&shy;potenzial</button>
@@ -73,6 +75,13 @@
       können deutlich abweichen.</p>
     <p>Amtliche Informationen: <a href="https://www.nlwkn.niedersachsen.de" target="_blank" rel="noopener">NLWKN – Hinweiskarten Starkregengefahren</a>
       und Ihre Stadt- bzw. Gemeindeverwaltung.</p>
+    <h3>Datenschutz</h3>
+    <p class="small">Die App erhebt selbst keine personenbezogenen Daten, setzt keine Cookies und nutzt keine Analysedienste.
+      Beim Aufruf werden die App von GitHub Pages (GitHub Inc.) und die Hintergrundkarte vom Bundesamt für Kartographie und
+      Geodäsie (sgx.geodatenzentrum.de) geladen; dabei wird technisch bedingt Ihre IP-Adresse übertragen. Wird eine Adresse
+      nicht im eigenen Verzeichnis gefunden, wird die Suchanfrage an OpenStreetMap Nominatim gesendet. Ihr Standort wird nur
+      auf Knopfdruck im Gerät verwendet und nicht übertragen. PDF-Dateien entstehen vollständig auf Ihrem Gerät. Gespeichert
+      werden nur Einstellungen im Browser (Hinweis gelesen, Bedienfeld eingeklappt).</p>
     <p class="small">Gebiet: Stadt Osterholz-Scharmbeck. Daten: DGM1 und ALKIS © LGLN (dl-de/by-2-0), Hintergrundkarte basemap.de © BKG (dl-de/by-2-0).
       Stand der Berechnung: <span id="stand"></span>.</p>
     <form method="dialog"><button class="primary" autofocus>Verstanden</button></form>

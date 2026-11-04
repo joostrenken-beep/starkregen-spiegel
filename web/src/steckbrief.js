@@ -82,7 +82,9 @@ const T_MULDE = 'Direkt am Haus liegt eine kleine, tiefe Mulde (z. B. Kellerabga
 const T_AUSSEN = 'Ein großer Teil des Wassers kommt von außerhalb Ihres Flurstücks. Sprechen Sie mit Nachbarn und Stadt über gemeinsame Notabflusswege. Eigene Maßnahmen dürfen das Wasser nicht zum Nachteil der Nachbarn umleiten (§ 37 Wasserhaushaltsgesetz).';
 const T_S4 = 'Einrichtung mit besonders schutzbedürftigen Menschen: Alarm- und Räumungsplan für Starkregen aufstellen, Zuständigkeiten festlegen und mit Feuerwehr und Stadt abstimmen.';
 
-export function tipsSection(p, cur, sb, sc) {
+export const TIPP_STUFE = ['Vorsorge allgemein', 'einfache Maßnahmen', 'Objektschutz empfohlen', 'Objektschutz dringend'];
+
+export function tipsList(p, cur, sb) {
   const lvl = cur.gef;
   const items = [];
   if (lvl >= 2) items.push(...T_ROT);
@@ -91,7 +93,13 @@ export function tipsSection(p, cur, sb, sc) {
   if (sb?.e?.g && sb.e.x >= 50 && lvl >= 1) items.push(T_AUSSEN);
   if (p.s === 4) items.push(T_S4);
   items.push(...T_ALLE);
-  const sum = ['Vorsorge allgemein', 'einfache Maßnahmen', 'Objektschutz empfohlen', 'Objektschutz dringend'][lvl];
+  return items;
+}
+
+export function tipsSection(p, cur, sb, sc) {
+  const lvl = cur.gef;
+  const items = tipsList(p, cur, sb);
+  const sum = TIPP_STUFE[lvl];
   return `<details class="sec"${lvl >= 1 ? ' open' : ''}>
     <summary><span>Was Sie tun können</span><span class="sum">${sum}</span></summary>
     <p class="small">Passend zum Wasser am Haus bei ${sc.mm} mm in ${sc.dauer_h} h.</p>

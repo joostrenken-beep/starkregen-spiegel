@@ -6,6 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './style.css';
 import { createSearch } from './search.js';
 import { renderBuilding, renderSink } from './info.js';
+import { buildingPdf, mapPdf } from './pdf.js';
 
 const DATA = './data/';
 const BASEMAP =
@@ -14,7 +15,8 @@ const AMPEL = { 0: '#3a9d5d', 1: '#f2b705', 2: '#d7301f' };
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const state = { meta: null, sid: null, view: 'gef', classes: new Set([1, 2, 3, 4]), buildings: new Map(), selected: null, v: '', cells: null,
-  sb: new Map(), sbCur: undefined, einzug: false, is3d: false, map: null };
+  sb: new Map(), sbCur: undefined, einzug: false, is3d: false, map: null, mk: null };
+const MARK_ROT = '#e3001b';
 export const RISK = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
 export const RISK_TXT = ['gering', 'mäßig', 'hoch', 'sehr hoch'];
 const GEF = ['#3a9d5d', '#f2b705', '#e8590c', '#a50f15'];
@@ -40,6 +42,9 @@ async function main() {
   document.getElementById('stand').textContent = meta.stand;
   const scen = meta.szenarien;
   state.sid = scen[Math.min(1, scen.length - 1)].id;
+  // Markierung: höchstes Schutzgut mit ≥ 30 cm am Haus bei T ≈ 30 a (Szenario aus den Daten)
+  state.mk = { szenario: 'p30', gefaehrdung_ab: 2, schutzklasse: 4, ...(meta.markierung || {}) };
+  state.mk.sc = scen.find((x) => x.id === state.mk.szenario);
 
   const protocol = new Protocol();
   maplibregl.addProtocol('pmtiles', protocol.tile);
@@ -106,6 +111,10 @@ async function main() {
     map.addLayer({ id: 'gebaeude-s4', type: 'line', source: 'gebaeude', minzoom: 13,
       filter: ['==', ['get', 's'], 4], layout: { visibility: 'none' },
       paint: { 'line-color': '#6a1b9a', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 1.5, 18, 3.5] } });
+    map.addLayer({ id: 'gebaeude-markiert-saum', type: 'line', source: 'gebaeude', minzoom: 13, filter: markFilter(),
+      paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 4, 18, 9] } });
+    map.addLayer({ id: 'gebaeude-markiert', type: 'line', source: 'gebaeude', minzoom: 13, filter: markFilter(),
+      paint: { 'line-color': MARK_ROT, 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2, 18, 5] } });
     map.addLayer({ id: 'gebaeude-linie', type: 'line', source: 'gebaeude', minzoom: 15,
       paint: { 'line-color': '#444', 'line-width': 0.4, 'line-opacity': 0.6 } });
     map.addLayer({ id: 'gebaeude-auswahl', type: 'line', source: 'gebaeude',
@@ -124,6 +133,12 @@ async function main() {
       paint: { 'line-color': '#00c2ff', 'line-width': width, 'line-dasharray': [0, 4, 3] } });
     if (!reducedMotion) animateFlow(map);
 
+    // Übersicht der markierten Gebäude (Punkte, solange Gebäude noch nicht geladen sind)
+    map.addSource('markiert', { type: 'geojson', data: meta.markierung?.datei ? abs(meta.markierung.datei + state.v) : EMPTY });
+    map.addLayer({ id: 'markiert-punkte', type: 'circle', source: 'markiert', maxzoom: 14,
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 4, 13.9, 7], 'circle-color': '#ffffff',
+        'circle-stroke-color': MARK_ROT, 'circle-stroke-width': 3 } });
+
     // 1-km-Pakete nachladen
     state.cells = createCells({ map, meta, version: state.v, onUpdate: (cells) => showCells(map, cells) });
     const hint = document.getElementById('zoom-hint');
@@ -139,11 +154,13 @@ async function main() {
     createSearch({ map, addresses: adr, bounds: meta.gebiet.bounds, onSelect: (hit) => selectBuilding(map, hit.id, hit) });
     setupLocate(map);
     setup3d(map);
+    setupExport(map);
     state.cells.refresh(true);
     document.body.classList.add('ready');
   });
 
   setupDisclaimer();
+  setupBarToggle();
   setupSheet(map);
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -166,6 +183,16 @@ function ampelColor(sid) {
   if (state.view === 'schaden') return ['match', ['get', 's'], 4, SK[4], 3, SK[3], 2, SK[2], SK[1]];
   return ['match', ['get', `g_${sid}`], 3, GEF[3], 2, GEF[2], 1, GEF[1], GEF[0]];
 }
+function markFilter() {
+  const m = state.mk;
+  return ['all', ['==', ['get', 's'], m.schutzklasse], ['>=', ['get', `g_${m.szenario}`], m.gefaehrdung_ab]];
+}
+function isMarked(p) {
+  const m = state.mk;
+  return p.s === m.schutzklasse && (p[`g_${m.szenario}`] ?? 0) >= m.gefaehrdung_ab
+    ? { mm: m.sc?.mm ?? 30, jaehrlichkeit: m.sc?.jaehrlichkeit } : null;
+}
+
 function extrusionColor(sid) {
   return ['case', ['boolean', ['feature-state', 'sel'], false], '#3b4a5c', ampelColor(sid)];
 }
@@ -268,10 +295,13 @@ function renderLegend() {
 
 function legendBuildings(m) {
   const sw = (c, t) => `<div class="lg"><span class="sw" style="background:${c}"></span>${t}</div>`;
-  const s4 = '<div class="lg"><span class="sw s4"></span>Umrandung: Schadenspotenzial S4</div>';
+  const s4 = '<div class="lg"><span class="sw s4"></span>Umrandung: Schadenspotenzial S4</div>'
+    + `<div class="lg"><span class="sw mk"></span>Roter Rahmen: S4 mit ≥ 30 cm am Haus schon bei ${state.mk.sc?.mm ?? 30} mm `
+    + `(${state.mk.sc?.jaehrlichkeit || 'T ≈ 30 a'})</div>`;
   const filt = state.classes.size < 4 ? `<div class="lg small">gezeigt: ${[...state.classes].sort().map((k) => `S${k}`).join(', ')}</div>` : '';
   if (state.view === 'schaden') {
-    return `<h3>Schadenspotenzial (Gebäudeart, unabhängig vom Regen)</h3>${[4, 3, 2, 1].map((k) => sw(SK[k], SK_TXT[k])).join('')}${filt}`;
+    return `<h3>Schadenspotenzial (Gebäudeart, unabhängig vom Regen)</h3>${[4, 3, 2, 1].map((k) => sw(SK[k], SK_TXT[k])).join('')}`
+      + `<div class="lg"><span class="sw mk"></span>Roter Rahmen: S4 mit ≥ 30 cm am Haus bei ${state.mk.sc?.mm ?? 30} mm</div>${filt}`;
   }
   if (state.view === 'risiko') {
     return `<h3>Risiko = Wasser am Gebäude × Schadenspotenzial</h3>${[3, 2, 1, 0].map((k) => sw(RISK[k], RISK_TXT[k])).join('')}${s4}${filt}`;
@@ -306,6 +336,12 @@ function setupScenario(map) {
 
 function setupClicks(map) {
   map.on('click', (e) => {
+    const mp = map.queryRenderedFeatures(e.point, { layers: ['markiert-punkte'] })[0];
+    if (mp) {
+      const q = mp.properties;
+      const [lon, lat] = mp.geometry.coordinates;
+      return selectBuilding(map, q.id, { lon, lat, cell: q.c, label: q.a || q.art });
+    }
     const hits = map.queryRenderedFeatures(e.point, { layers: ['gebaeude', 'gebaeude-3d', 'senken'].filter((l) => map.getLayer(l)) });
     const b = hits.find((h) => h.layer.id.startsWith('gebaeude'));
     if (b) return selectBuilding(map, b.id, null, false);
@@ -316,6 +352,8 @@ function setupClicks(map) {
   });
   map.on('mouseenter', 'gebaeude', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseenter', 'gebaeude-3d', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseenter', 'markiert-punkte', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'markiert-punkte', () => { map.getCanvas().style.cursor = ''; });
   map.on('mouseleave', 'gebaeude-3d', () => { map.getCanvas().style.cursor = ''; });
   map.on('mouseleave', 'gebaeude', () => { map.getCanvas().style.cursor = ''; });
 }
@@ -361,7 +399,15 @@ async function selectBuilding(map, id, hit, fly = true) {
 
 function setupSheet(map) {
   document.querySelector('.sheet-close').addEventListener('click', () => { hideSheet(); clearSelection(map); });
-  document.getElementById('sheet-body').addEventListener('click', (e) => {
+  document.getElementById('sheet-body').addEventListener('click', async (e) => {
+    const pdfBtn = e.target.closest('[data-action=pdf]');
+    if (pdfBtn) {
+      const f = state.buildings.get(state.selected);
+      if (!f) return;
+      await busy(pdfBtn, 'PDF wird erstellt …', () => buildingPdf({ f, meta: state.meta, sid: state.sid,
+        sb: state.sbCur, map, markiert: isMarked(f.properties) }));
+      return;
+    }
     if (!e.target.closest('[data-action=einzug]')) return;
     state.einzug = !state.einzug;
     showEinzug(map);
@@ -385,7 +431,64 @@ function renderSelected() {
   if (state.selected == null) return;
   const f = state.buildings.get(state.selected);
   if (!f) return;
-  showSheet(renderBuilding(f, state.meta, state.sid, state.view, { sb: state.sbCur, einzug: state.einzug }));
+  showSheet(renderBuilding(f, state.meta, state.sid, state.view,
+    { sb: state.sbCur, einzug: state.einzug, markiert: isMarked(f.properties) }));
+}
+
+async function busy(btn, txt, fn) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = txt;
+  try { await fn(); } catch (err) { console.error(err); alert('Das PDF konnte nicht erstellt werden.'); }
+  btn.disabled = false;
+  btn.textContent = old;
+}
+
+const VIEW_TITEL = { gef: 'Ansicht: Wasser am Haus', schaden: 'Ansicht: Schadenspotenzial', risiko: 'Ansicht: Risiko' };
+
+function legendItems() {
+  const m = state.meta;
+  const g = m.risiko?.gefaehrdung_grenzen_m || [0.1, 0.3, 0.5];
+  const tiefe = m.tiefenklassen.map((k, i) => {
+    const next = m.tiefenklassen[i + 1];
+    return { farbe: k.farbe, text: next ? `${Math.round(k.ab_m * 100)}-${Math.round(next.ab_m * 100)} cm` : `über ${Math.round(k.ab_m * 100)} cm` };
+  });
+  let geb;
+  if (state.view === 'schaden') geb = { titel: 'Schadenspotenzial', eintraege: [4, 3, 2, 1].map((k) => ({ farbe: SK[k], text: SK_TXT[k] })) };
+  else if (state.view === 'risiko') geb = { titel: 'Risiko (Wasser × Schadenspotenzial)', eintraege: [3, 2, 1, 0].map((k) => ({ farbe: RISK[k], text: RISK_TXT[k] })) };
+  else {
+    geb = { titel: 'Wasser am Gebäude', eintraege: [
+      { farbe: GEF[3], text: `ab ${g[2] * 100} cm` }, { farbe: GEF[2], text: `${g[1] * 100}-${g[2] * 100} cm` },
+      { farbe: GEF[1], text: `${g[0] * 100}-${g[1] * 100} cm` }, { farbe: GEF[0], text: `unter ${g[0] * 100} cm` }] };
+  }
+  geb.eintraege.push({ farbe: MARK_ROT, rahmen: true,
+    text: `Roter Rahmen: S4 mit >= 30 cm am Haus bei ${state.mk.sc?.mm ?? 30} mm (${state.mk.sc?.jaehrlichkeit || 'T ca. 30 a'})` });
+  return [{ titel: 'Max. Wassertiefe', eintraege: tiefe }, geb,
+    { titel: 'Fließwege', eintraege: [{ farbe: '#0a6fb5', text: 'Hauptfließwege (Breite = Wassermenge)' }] }];
+}
+
+function setupExport(map) {
+  const btn = document.getElementById('pdf-karte');
+  btn.addEventListener('click', () => busy(btn, 'PDF wird erstellt …', () =>
+    mapPdf({ map, meta: state.meta, sid: state.sid, viewTitle: VIEW_TITEL[state.view], legend: legendItems() })));
+}
+
+// Bedienfeld unten ein-/ausklappen (Zustand je Gerät merken)
+function setupBarToggle() {
+  const bar = document.querySelector('.bottombar');
+  const btn = document.getElementById('bar-toggle');
+  const set = (c) => {
+    bar.classList.toggle('collapsed', c);
+    btn.setAttribute('aria-expanded', String(!c));
+    btn.textContent = c ? '▴' : '▾';
+    btn.title = c ? 'Bedienfeld ausklappen' : 'Bedienfeld einklappen';
+  };
+  set(store('leiste-zu') === '1');
+  btn.addEventListener('click', () => {
+    const c = !bar.classList.contains('collapsed');
+    set(c);
+    store('leiste-zu', c ? '1' : '0');
+  });
 }
 
 function showEinzug(map) {
@@ -427,6 +530,9 @@ function updateBuildingVisibility(map) {
   vis('gebaeude-auswahl', !state.is3d);
   vis('gebaeude-s4', on && !state.is3d && state.view !== 'schaden');
   vis('gebaeude-3d', on && state.is3d);
+  vis('gebaeude-markiert', on && state.classes.has(state.mk.schutzklasse));
+  vis('gebaeude-markiert-saum', on && state.classes.has(state.mk.schutzklasse));
+  vis('markiert-punkte', on && state.classes.has(state.mk.schutzklasse));
 }
 
 function setup3d(map) {

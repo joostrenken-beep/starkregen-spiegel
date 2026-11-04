@@ -7,14 +7,14 @@ const AMPEL_TXT = [
   { cls: 'rot', kurz: 'hoch', titel: 'Hohe Gefährdung', text: 'Am Gebäude können mehr als 30 cm Wasser stehen oder vorbeifließen.' },
 ];
 
-const RISK_TXT = ['gering', 'mäßig', 'hoch', 'sehr hoch'];
-const S_TXT = { 1: 'S1 – gering', 2: 'S2 – mäßig', 3: 'S3 – hoch', 4: 'S4 – sehr hoch' };
-const GEF_TITEL = ['Kaum Wasser am Haus', 'Wasser am Haus: 10–30 cm', 'Wasser am Haus: 30–50 cm', 'Wasser am Haus: über 50 cm'];
-const GEF_TEXT = ['Nach der Berechnung sammelt sich am Gebäude kaum Wasser (unter 10 cm).',
+export const RISK_TXT = ['gering', 'mäßig', 'hoch', 'sehr hoch'];
+export const S_TXT = { 1: 'S1 – gering', 2: 'S2 – mäßig', 3: 'S3 – hoch', 4: 'S4 – sehr hoch' };
+export const GEF_TITEL = ['Kaum Wasser am Haus', 'Wasser am Haus: 10–30 cm', 'Wasser am Haus: 30–50 cm', 'Wasser am Haus: über 50 cm'];
+export const GEF_TEXT = ['Nach der Berechnung sammelt sich am Gebäude kaum Wasser (unter 10 cm).',
   'Am Gebäude können 10–30 cm Wasser stehen oder vorbeifließen.',
   'Am Gebäude können 30–50 cm Wasser stehen oder vorbeifließen.',
   'Am Gebäude können mehr als 50 cm Wasser stehen oder vorbeifließen.'];
-const GEF_TXT = ['unter 10 cm', '10–30 cm', '30–50 cm', 'über 50 cm'];
+export const GEF_TXT = ['unter 10 cm', '10–30 cm', '30–50 cm', 'über 50 cm'];
 
 export function parse(v) {
   const [a, cm, mulde, gef, risk] = (v || '0|0|0|0|0').split('|').map(Number);
@@ -56,9 +56,12 @@ export function renderBuilding(f, meta, sid, view = 'gef', opt = {}) {
     head = `<div class="risk r${cur.gef}"><strong>${GEF_TITEL[cur.gef]}</strong><span>bei ${sc.mm} mm Regen in ${sc.dauer_h} h</span></div>
        <p>${GEF_TEXT[cur.gef]}</p>`;
   }
+  const mk = opt.markiert ? `<p class="markiert">Rot markiert: höchstes Schutzgut (S4) und mindestens 30 cm Wasser am Haus
+      schon bei ${opt.markiert.mm} mm in 1 h (${esc(opt.markiert.jaehrlichkeit || '')}).</p>` : '';
   return `
     <h2>${esc(p.a) || 'Gebäude ohne Adresse'}</h2>
     <p class="muted">${esc(p.art)}</p>
+    ${mk}
     ${head}
     ${cur.mulde ? '<p class="hint">⚠ Direkt am Haus gibt es eine <strong>kleine, tiefe Mulde</strong> (z. B. Kellerabgang, Lichtschacht, abgesenkte Einfahrt). Dort kann sich Wasser sammeln und ins Haus laufen.</p>' : ''}
     ${schutz}
@@ -67,6 +70,7 @@ export function renderBuilding(f, meta, sid, view = 'gef', opt = {}) {
     ${catchmentSection(opt.sb, !!opt.einzug)}
     ${parcelSection(opt.sb, meta, sid)}
     ${tipsSection(p, cur, opt.sb, sc)}
+    <button type="button" class="secondary" data-action="pdf">Steckbrief als PDF speichern</button>
     ${p.h ? `<p class="small">Gebäudehöhe ca. ${String(p.h).replace('.', ',')} m (aus DOM1 − DGM1).</p>` : ''}
     <p class="small">„max. am Haus“ = höchster Wert im 2-m-Streifen rund um das Gebäude. Schadenspotenzial aus öffentlichen
       ALKIS-Daten (Gebäudefunktion, Flächennutzung); Keller sind darin nicht enthalten. Orientierungshilfe, keine amtliche Auskunft.</p>`;

@@ -165,6 +165,8 @@ web:
   minzoom: 11                  # Wassertiefe-Kacheln (PMTiles) von … bis
   maxzoom: 16
   zellen_minzoom: 14           # Gebäude, Fließwege, Senken ab dieser Zoomstufe nachladen
+  # Roter Rahmen: höchstes Schutzgut (S4) mit mindestens 30 cm am Haus bei T ≈ 30 a (30 mm/1 h)
+  markierung: {szenario: p30, gefaehrdung_ab: 2, schutzklasse: 4}
 
 # --- Risiko: Gefährdung × Schutzwürdigkeit -------------------------------
 # Schutzwürdigkeit S1–S4 in Anlehnung an DWA-A 118 (2006, Tab. 3, empfohlene

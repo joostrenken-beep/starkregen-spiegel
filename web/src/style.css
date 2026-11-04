@@ -128,3 +128,20 @@ details.sec p { font-size: 14px; margin: 4px 0 8px; }
 .secondary { border: 1.5px solid var(--blau); background: var(--bg); color: var(--blau); border-radius: 10px; padding: 8px 12px;
   font-size: 14px; cursor: pointer; width: 100%; margin: 2px 0 6px; }
 .secondary[aria-pressed="true"] { background: var(--blau); color: #fff; }
+
+/* Markierung: höchstes Schutzgut mit ≥ 30 cm bei T ≈ 30 a */
+.sw.mk { background: transparent; border: 2.5px solid #e3001b; }
+.markiert { border: 2px solid #e3001b; color: #a50f15; background: #fff1f1; border-radius: 8px; padding: 8px 10px;
+  font-size: 14px; font-weight: 600; margin: 6px 0 8px; }
+@media (prefers-color-scheme: dark) { .markiert { background: #3a1416; color: #ffb3b3; } }
+
+/* Bedienfeld unten einklappbar */
+.bar-toggle { position: absolute; top: -14px; right: 14px; width: 40px; height: 26px; border: 0; border-radius: 13px;
+  background: var(--bg); color: var(--blau); box-shadow: var(--schatten); font-size: 15px; cursor: pointer; line-height: 1; }
+.bottombar.collapsed .view-switch, .bottombar.collapsed .class-filter, .bottombar.collapsed .ticks,
+.bottombar.collapsed #disclaimer-link { display: none; }
+.bottombar.collapsed { padding-top: 8px; padding-bottom: 4px; }
+.bottombar.collapsed .scenario input[type=range] { margin-top: 4px; }
+dialog h3 { font-size: 14px; margin: 14px 0 2px; }
+.secondary:disabled { opacity: .6; cursor: progress; }
+#pdf-karte { margin-top: 10px; }

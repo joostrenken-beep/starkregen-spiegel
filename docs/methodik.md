@@ -145,6 +145,12 @@ Hydraulik wird nicht neu gerechnet.
   Gefährdung), ergänzt um Hinweise zu kleiner Mulde am Haus, hohem Fremdzufluss
   (§ 37 WHG) und S4-Einrichtungen.
 
+## 7b. Markierung „höchstes Schutzgut“ (M5)
+Rot umrandet (in kleinen Zoomstufen als roter Kreis) werden alle Gebäude mit
+Schadenspotenzial S4, an denen im Szenario 30 mm/1 h (KOSTRA-DWD-2020: ca. 30-jährlich)
+mindestens 30 cm Wasser stehen (Gefährdungsstufe ≥ 2). Unabhängig vom Regen-Regler.
+Einstellung: `web.markierung` in der Konfiguration; Liste: `markiert.json`.
+
 ## 8. Grenzen (gehören in den Hinweistext der App)
 - Statisch: keine Ganglinien, keine Fließzeiten, kein Rückstau, kein Impuls.
   Die Regendauer wirkt nur über Kanalabschlag und Infiltration.
